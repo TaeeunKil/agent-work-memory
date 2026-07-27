@@ -46,6 +46,8 @@ dependencies = [
 [project.scripts]
 ca = "codealmanac.cli.main:main"
 codealmanac = "codealmanac.cli.main:main"
+wa = "workalmanac.cli:main"
+workalmanac = "workalmanac.cli:main"
 
 [project.urls]
 Repository = "https://github.com/AlmanacCode/codealmanac"
