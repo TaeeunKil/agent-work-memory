@@ -13,6 +13,7 @@ from workalmanac.services.distillation.service import DistillationService
 from workalmanac.services.search.service import SearchService
 from workalmanac.services.sessions.service import SessionsService
 from workalmanac.services.vault.service import VaultService
+from workalmanac.services.wiki.service import WikiCatalogService
 from workalmanac.workflows.distill.models import DistillSessions
 from workalmanac.workflows.distill.prompt import distill_prompt
 
@@ -25,12 +26,14 @@ class DistillSessionsWorkflow:
         distillation: DistillationService,
         vault: VaultService,
         search: SearchService,
+        wiki: WikiCatalogService,
     ):
         self.sessions = sessions
         self.curators = curators
         self.distillation = distillation
         self.vault = vault
         self.search = search
+        self.wiki = wiki
 
     def run(self, request: DistillSessions) -> DistillReceipt:
         selected = tuple(
@@ -78,6 +81,7 @@ class DistillSessionsWorkflow:
                     }
                 )
                 self.vault.refresh_session(projected, events)
+            self.wiki.refresh()
             self.search.refresh()
             self.sessions.mark_distilled(
                 request.session_ids,

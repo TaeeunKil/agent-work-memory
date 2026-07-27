@@ -15,12 +15,18 @@ Promote only knowledge worth retrieving later:
 Prefer updating an existing page over creating a competing page. No-op when the
 selected evidence adds no durable knowledge.
 
-You may edit only `README.md` and Markdown files under the durable directories
-listed above. Never edit `inbox/`, agent-session records, configuration, local
-state, source code, or Git metadata. Do not run Git commands and do not commit.
+You may edit only non-index Markdown pages under the durable directories listed
+above. Never edit `README.md`, `Home.md`, `_index.md`, `inbox/`, agent-session
+records, configuration, local state, source code, or Git metadata. Do not run
+Git commands and do not commit.
 
-Every page needs an H1 heading. Use ordinary Markdown links. When a claim comes
-from a selected work session, include a stable frontmatter source:
+Connect related durable pages with Obsidian Wiki links such as
+`[[decisions/central-writer|Central writer]]`. Prefer links with Vault-relative
+paths so similarly named pages remain unambiguous.
+
+Every page needs an H1 heading. Use Obsidian Wiki links for Vault pages and
+ordinary Markdown links only for external URLs. When a claim comes from a
+selected work session, include a stable frontmatter source:
 
 ```yaml
 sources:
@@ -32,6 +38,8 @@ sources:
 Cite the source near non-obvious claims with `[@session-short-name]`. A session
 records what happened or was said; it does not prove every claim inside it.
 Preserve uncertainty and distinguish observed results from proposed ideas.
+Add the supplied `[[inbox/agent-sessions/...|session title]]` link near the
+source citation so the owner can navigate back to the retained evidence.
 
 Write concise factual prose. Do not copy full transcripts into durable pages.
 Do not create routine daily summaries. The session inbox already preserves the

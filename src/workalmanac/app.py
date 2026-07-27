@@ -20,6 +20,7 @@ from workalmanac.services.sessions.store import SessionsStore
 from workalmanac.services.synchronization.service import SynchronizationService
 from workalmanac.services.synchronization.store import SynchronizationStore
 from workalmanac.services.vault import VaultService
+from workalmanac.services.wiki import WikiCatalogService
 from workalmanac.settings import WorkAlmanacConfig, load_config
 from workalmanac.workflows.collect import CollectAgentRecordsWorkflow
 from workalmanac.workflows.distill import DistillSessionsWorkflow
@@ -42,6 +43,7 @@ class WorkAlmanac:
         search: SearchService,
         sync: SyncAgentRecordsWorkflow,
         synchronization: SynchronizationService,
+        wiki: WikiCatalogService,
     ):
         self.automation = automation
         self.sessions = sessions
@@ -54,6 +56,7 @@ class WorkAlmanac:
         self.search = search
         self.sync = sync
         self.synchronization = synchronization
+        self.wiki = wiki
 
     @property
     def config(self) -> WorkAlmanacConfig:
@@ -72,12 +75,13 @@ def create_app(
     store = SessionsStore(resolved.database_path)
     sessions = SessionsService(store)
     vault = VaultService(resolved)
+    wiki = WikiCatalogService(vault, sessions)
     collectors = (
         CodexTranscriptCollector(),
         ClaudeTranscriptCollector(),
     )
-    collect = CollectAgentRecordsWorkflow(sessions, vault, collectors)
-    import_records = ImportAgentRecordsWorkflow(sessions, vault)
+    collect = CollectAgentRecordsWorkflow(sessions, vault, wiki, collectors)
+    import_records = ImportAgentRecordsWorkflow(sessions, vault, wiki)
     search = SearchService(resolved.database_path, sessions, vault)
     synchronization = SynchronizationService(
         SynchronizationStore(resolved.database_path)
@@ -115,6 +119,7 @@ def create_app(
         distillation,
         vault,
         search,
+        wiki,
     )
     return WorkAlmanac(
         automation=automation,
@@ -128,4 +133,5 @@ def create_app(
         search=search,
         sync=sync,
         synchronization=synchronization,
+        wiki=wiki,
     )
