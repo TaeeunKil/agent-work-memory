@@ -157,11 +157,30 @@ Status: complete on `codex/workalmanac`.
 
 ### Slice 150: release verification
 
-- Exercise a clean Windows setup through collection, search, local distillation,
-  viewer browsing, scheduler status, and package installation.
-- Verify migration, rollback, path containment, and private-content boundaries.
-- Build wheel and source distributions with all prompts and viewer assets.
-- Record remaining non-v1 extensions separately.
+Status: complete on `codex/workalmanac`.
+
+- [x] Install the editable branch as a user-level `wa` tool on Windows.
+- [x] Initialize a real private Vault, retain Codex and Claude content, and
+  install five-minute automatic synchronization.
+- [x] Verify diagnostics, scheduler status, bounded session counting, indexed
+  search, and the loopback viewer without printing transcript bodies.
+- [x] Validate migration preflight, rollback, path containment, content-access
+  boundaries, and runtime error redaction in automated tests.
+- [x] Build wheel and source distributions containing the Work Almanac prompt,
+  CLI entry points, viewer assets, and workflows.
+- [x] Record remaining non-v1 extensions separately.
+
+Windows release evidence on 2026-07-27:
+
+- 206 retained sessions and more than 148,000 events completed first sync.
+- A current-index no-match search completed in 811 ms; the previous unconditional
+  rebuild exceeded one minute and was fixed with persisted source signatures.
+- The viewer returned HTTP 200 from `127.0.0.1` with `no-store`, CSP,
+  no-sniff, referrer, and frame-denial headers.
+- Work Almanac and shared-contract gates passed: 124 tests passed and one known
+  Windows home-path test was deselected.
+- The untouched upstream CodeAlmanac suite additionally ran 584 passing tests;
+  24 donor tests remain platform-specific failures on Windows.
 
 ## Explicitly later
 
