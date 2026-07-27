@@ -60,3 +60,6 @@ class DistillationService:
 
     def get(self, run_id: str) -> DistillReceipt | None:
         return self.store.get(run_id)
+
+    def list(self, limit: int = 50) -> tuple[DistillReceipt, ...]:
+        return self.store.list(limit)

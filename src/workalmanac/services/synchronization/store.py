@@ -68,6 +68,18 @@ class SynchronizationStore:
             ).fetchone()
         return sync_receipt_from_row(row) if row is not None else None
 
+    def list(self, limit: int = 50) -> tuple[SyncReceipt, ...]:
+        with open_database(self.database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM sync_receipts
+                ORDER BY started_at DESC, run_id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return tuple(sync_receipt_from_row(row) for row in rows)
+
 
 def sync_receipt_from_row(row: object) -> SyncReceipt:
     return SyncReceipt(

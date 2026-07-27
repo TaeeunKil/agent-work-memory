@@ -23,6 +23,7 @@ from workalmanac.services.sessions.store import SessionsStore
 from workalmanac.services.synchronization.service import SynchronizationService
 from workalmanac.services.synchronization.store import SynchronizationStore
 from workalmanac.services.vault import VaultService
+from workalmanac.services.viewer import ViewerService
 from workalmanac.services.wiki import WikiCatalogService
 from workalmanac.settings import WorkAlmanacConfig, load_config
 from workalmanac.workflows.collect import CollectAgentRecordsWorkflow
@@ -46,6 +47,7 @@ class WorkAlmanac:
         search: SearchService,
         sync: SyncAgentRecordsWorkflow,
         synchronization: SynchronizationService,
+        viewer: ViewerService,
         wiki: WikiCatalogService,
     ):
         self.automation = automation
@@ -59,6 +61,7 @@ class WorkAlmanac:
         self.search = search
         self.sync = sync
         self.synchronization = synchronization
+        self.viewer = viewer
         self.wiki = wiki
 
     @property
@@ -90,6 +93,7 @@ def create_app(
     synchronization = SynchronizationService(
         SynchronizationStore(resolved.database_path)
     )
+    viewer = ViewerService(sessions, vault, wiki, synchronization)
     sync = SyncAgentRecordsWorkflow(
         collect,
         search,
@@ -140,5 +144,6 @@ def create_app(
         search=search,
         sync=sync,
         synchronization=synchronization,
+        viewer=viewer,
         wiki=wiki,
     )
