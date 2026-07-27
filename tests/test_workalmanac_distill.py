@@ -270,6 +270,41 @@ def test_remote_yoke_curator_rejects_selected_local_content(tmp_path: Path):
         )
 
 
+def test_yoke_curator_redacts_permission_failures(
+    tmp_path: Path,
+    monkeypatch,
+):
+    class PermissionDeniedHarness:
+        def check_sync(self):
+            raise PermissionError(r"C:\private\runtime.exe")
+
+        def run_sync(self, prompt, options):
+            raise PermissionError(r"C:\private\runtime.exe")
+
+    adapter = YokeCuratorAdapter("codex", tmp_path / "state/curators/codex")
+    monkeypatch.setattr(
+        adapter,
+        "harness",
+        lambda _cwd: PermissionDeniedHarness(),
+    )
+
+    readiness = adapter.check()
+    result = adapter.run(
+        CuratorRunRequest(
+            runtime="codex",
+            vault_path=tmp_path / "vault",
+            prompt="Do not run.",
+            content_access=ContentAccess.METADATA_ONLY,
+        )
+    )
+
+    assert not readiness.available
+    assert "PermissionError" in readiness.message
+    assert r"C:\private" not in readiness.message
+    assert result.status is CuratorRunStatus.FAILED
+    assert result.output_text == "codex curator failed (PermissionError)"
+
+
 def distill_app(tmp_path: Path, adapter: FakeCuratorAdapter):
     return create_app(
         WorkAlmanacConfig(
