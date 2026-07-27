@@ -6,7 +6,7 @@ import yaml
 
 from workalmanac.services.sessions.models import AgentSession
 from workalmanac.services.sessions.service import SessionsService
-from workalmanac.services.vault.service import DURABLE_DIRECTORIES, VaultService
+from workalmanac.services.vault.service import CATALOG_DIRECTORIES, VaultService
 from workalmanac.services.wiki.models import WikiPage
 
 HOME_PATH = Path("Home.md")
@@ -19,6 +19,7 @@ CATEGORY_TITLES = {
     "procedures": "Procedures",
     "systems": "Systems",
     "unfinished": "Unfinished work",
+    "imports": "Imported Almanacs",
 }
 
 
@@ -30,7 +31,7 @@ class WikiCatalogService:
     def pages(self) -> tuple[WikiPage, ...]:
         root = self.vault.require_path()
         pages: list[WikiPage] = []
-        for category in sorted(DURABLE_DIRECTORIES):
+        for category in sorted(CATALOG_DIRECTORIES):
             category_root = root / category
             for path in sorted(category_root.rglob("*.md")):
                 if path.name == INDEX_NAME or not path.is_file() or path.is_symlink():
@@ -49,7 +50,7 @@ class WikiCatalogService:
         rendered: dict[Path, str] = {
             HOME_PATH: render_home(pages, sessions),
         }
-        for category in sorted(DURABLE_DIRECTORIES):
+        for category in sorted(CATALOG_DIRECTORIES):
             category_pages = tuple(page for page in pages if page.category == category)
             rendered[Path(category) / INDEX_NAME] = render_category_index(
                 category,

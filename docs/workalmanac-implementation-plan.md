@@ -192,6 +192,18 @@ Implemented in
 - [x] responsive, dependency-free packaged viewer assets;
 - [x] browser QA at desktop and mobile widths with no console errors.
 
+## Slice 10: onboarding and migration
+
+Implemented in
+[Work Almanac v1 Completion Plan](workalmanac-v1-completion-plan.md) and the
+[Work Almanac User Guide](workalmanac-user-guide.md):
+
+- [x] one-command setup, first sync, and optional scheduler installation;
+- [x] `wa doctor` local-state and provider diagnostics;
+- [x] isolated, idempotent legacy `.almanac/pages` import;
+- [x] imported-page search, indexes, and viewer category;
+- [x] explicit Obsidian, privacy, backup, recovery, and local-model guidance.
+
 ## Validation record
 
 - Ruff: all new Work Almanac code and changed contract tests pass.
