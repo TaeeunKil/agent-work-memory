@@ -27,6 +27,11 @@ class CuratorsService:
     def run(self, request: CuratorRunRequest) -> CuratorRunResult:
         return self.adapter_for(request.runtime).run(request)
 
+    def readiness(self) -> tuple[CuratorReadiness, ...]:
+        return tuple(
+            self.adapters[runtime].check() for runtime in sorted(self.adapters)
+        )
+
     def adapter_for(self, runtime: str) -> CuratorAdapter:
         try:
             return self.adapters[runtime]

@@ -2,7 +2,10 @@ from collections.abc import Sequence
 
 from workalmanac.database import open_database
 from workalmanac.integrations.automation import default_scheduler_adapter
-from workalmanac.integrations.curators import YokeCuratorAdapter
+from workalmanac.integrations.curators import (
+    OllamaCuratorAdapter,
+    YokeCuratorAdapter,
+)
 from workalmanac.integrations.transcripts import (
     ClaudeTranscriptCollector,
     CodexTranscriptCollector,
@@ -68,6 +71,7 @@ def create_app(
     *,
     curator_adapters: Sequence[CuratorAdapter] | None = None,
     scheduler_adapter: SchedulerAdapter | None = None,
+    ollama_url: str | None = None,
 ) -> WorkAlmanac:
     resolved = config or load_config()
     with open_database(resolved.database_path):
@@ -108,6 +112,9 @@ def create_app(
             YokeCuratorAdapter(
                 "claude",
                 resolved.state_dir / "curators" / "claude",
+            ),
+            OllamaCuratorAdapter(
+                ollama_url if ollama_url is not None else "http://127.0.0.1:11434"
             ),
         )
     )
