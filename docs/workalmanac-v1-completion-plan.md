@@ -50,11 +50,25 @@ projects / decisions / problems / procedures / systems / unfinished
 
 ### Slice 145: automatic retention
 
-- Add one idempotent `wa sync` operation.
-- Add a single-instance lock so overlapping scheduled runs exit safely.
-- Record sync receipts and expose last-run status.
-- Add Windows Task Scheduler install, status, and uninstall commands.
-- Default scheduled work to local content retention only; never auto-distill.
+Status: complete on `codex/workalmanac`.
+
+- [x] Add one idempotent `wa sync` operation.
+- [x] Add a single-instance lock so overlapping scheduled runs exit safely.
+- [x] Record sync receipts and expose last-run status.
+- [x] Add Windows Task Scheduler install, status, and uninstall commands.
+- [x] Keep content retention opt-in and never auto-distill.
+
+Daily commands:
+
+```powershell
+wa sync --from codex --from claude --include-content
+wa auto install --every 5 --from codex --from claude --include-content
+wa auto status
+wa auto remove
+```
+
+Automatic collection stores local evidence and refreshes search. It never starts
+a curator, sends transcript bodies to a model, or incurs model usage.
 
 ### Slice 146: Wiki navigation
 

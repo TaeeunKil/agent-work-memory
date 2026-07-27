@@ -1,11 +1,15 @@
 from collections.abc import Sequence
 
 from workalmanac.database import open_database
+from workalmanac.integrations.automation import default_scheduler_adapter
 from workalmanac.integrations.curators import YokeCuratorAdapter
 from workalmanac.integrations.transcripts import (
     ClaudeTranscriptCollector,
     CodexTranscriptCollector,
 )
+from workalmanac.services.automation.ports import SchedulerAdapter
+from workalmanac.services.automation.service import AutomationService
+from workalmanac.services.automation.store import AutomationStore
 from workalmanac.services.curators.ports import CuratorAdapter
 from workalmanac.services.curators.service import CuratorsService
 from workalmanac.services.distillation.service import DistillationService
@@ -13,17 +17,21 @@ from workalmanac.services.distillation.store import DistillationStore
 from workalmanac.services.search import SearchService
 from workalmanac.services.sessions import SessionsService
 from workalmanac.services.sessions.store import SessionsStore
+from workalmanac.services.synchronization.service import SynchronizationService
+from workalmanac.services.synchronization.store import SynchronizationStore
 from workalmanac.services.vault import VaultService
 from workalmanac.settings import WorkAlmanacConfig, load_config
 from workalmanac.workflows.collect import CollectAgentRecordsWorkflow
 from workalmanac.workflows.distill import DistillSessionsWorkflow
 from workalmanac.workflows.import_records import ImportAgentRecordsWorkflow
+from workalmanac.workflows.sync import SyncAgentRecordsWorkflow
 
 
 class WorkAlmanac:
     def __init__(
         self,
         *,
+        automation: AutomationService,
         sessions: SessionsService,
         vault: VaultService,
         collect: CollectAgentRecordsWorkflow,
@@ -32,7 +40,10 @@ class WorkAlmanac:
         distillation: DistillationService,
         import_records: ImportAgentRecordsWorkflow,
         search: SearchService,
+        sync: SyncAgentRecordsWorkflow,
+        synchronization: SynchronizationService,
     ):
+        self.automation = automation
         self.sessions = sessions
         self.vault = vault
         self.collect = collect
@@ -41,6 +52,8 @@ class WorkAlmanac:
         self.distillation = distillation
         self.import_records = import_records
         self.search = search
+        self.sync = sync
+        self.synchronization = synchronization
 
     @property
     def config(self) -> WorkAlmanacConfig:
@@ -51,6 +64,7 @@ def create_app(
     config: WorkAlmanacConfig | None = None,
     *,
     curator_adapters: Sequence[CuratorAdapter] | None = None,
+    scheduler_adapter: SchedulerAdapter | None = None,
 ) -> WorkAlmanac:
     resolved = config or load_config()
     with open_database(resolved.database_path):
@@ -65,6 +79,20 @@ def create_app(
     collect = CollectAgentRecordsWorkflow(sessions, vault, collectors)
     import_records = ImportAgentRecordsWorkflow(sessions, vault)
     search = SearchService(resolved.database_path, sessions, vault)
+    synchronization = SynchronizationService(
+        SynchronizationStore(resolved.database_path)
+    )
+    sync = SyncAgentRecordsWorkflow(
+        collect,
+        search,
+        synchronization,
+        resolved.state_dir / "sync.lock",
+    )
+    automation = AutomationService(
+        scheduler_adapter or default_scheduler_adapter(),
+        AutomationStore(resolved.state_dir / "auto-sync.json"),
+        resolved.state_dir,
+    )
     adapters = (
         tuple(curator_adapters)
         if curator_adapters is not None
@@ -89,6 +117,7 @@ def create_app(
         search,
     )
     return WorkAlmanac(
+        automation=automation,
         sessions=sessions,
         vault=vault,
         collect=collect,
@@ -97,4 +126,6 @@ def create_app(
         distillation=distillation,
         import_records=import_records,
         search=search,
+        sync=sync,
+        synchronization=synchronization,
     )
