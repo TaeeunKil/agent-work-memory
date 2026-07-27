@@ -156,13 +156,13 @@ Implemented in [Work Almanac Distill Slice](workalmanac-distill-plan.md):
 
 ## Deliberately deferred
 
-- viewer/server redesign;
-- detached jobs and cancellation;
-- Windows Task Scheduler;
+The daily-use v1 work continues in
+[Work Almanac v1 Completion Plan](workalmanac-v1-completion-plan.md).
+
+Post-v1 extensions remain:
+
 - WSL/SSH transport;
 - shell hooks and command/output capture;
-- local-model curator adapter;
-- importing existing per-repository `almanac/` trees;
 - semantic/vector search.
 
 These are later slices against the seams above, not prerequisites for proving
