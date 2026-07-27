@@ -47,6 +47,8 @@ class AgentSession(WorkAlmanacModel):
     modified_at: datetime
     state: SessionState = SessionState.OPEN
     content_captured: bool = False
+    distilled_at: datetime | None = None
+    distill_runtime: str | None = None
     created_at: datetime
     updated_at: datetime
 

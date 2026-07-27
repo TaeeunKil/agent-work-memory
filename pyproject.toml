@@ -84,6 +84,7 @@ codealmanac = [
 "codealmanac.manual" = ["*.md"]
 "codealmanac.agents" = ["**/*.yaml", "**/*.md"]
 "codealmanac.services.setup" = ["*.md"]
+workalmanac = ["agents/*.md"]
 
 [tool.uv]
 package = true

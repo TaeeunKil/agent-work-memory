@@ -22,8 +22,9 @@ class SessionsStore:
                 INSERT INTO agent_sessions (
                   session_id, provider, provider_session_id, title, cwd,
                   source_path, started_at, ended_at, modified_at, state,
-                  content_captured, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  content_captured, distilled_at, distill_runtime, created_at,
+                  updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                   title = excluded.title,
                   cwd = excluded.cwd,
@@ -36,6 +37,8 @@ class SessionsStore:
                     agent_sessions.content_captured,
                     excluded.content_captured
                   ),
+                  distilled_at = agent_sessions.distilled_at,
+                  distill_runtime = agent_sessions.distill_runtime,
                   updated_at = excluded.updated_at
                 """,
                 session_values(session),
@@ -142,6 +145,32 @@ class SessionsStore:
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
 
+    def mark_distilled(
+        self,
+        session_ids: tuple[str, ...],
+        *,
+        runtime: str,
+        distilled_at: datetime,
+    ) -> None:
+        with open_database(self.database_path) as connection:
+            connection.executemany(
+                """
+                UPDATE agent_sessions
+                SET distilled_at = ?, distill_runtime = ?, updated_at = ?
+                WHERE session_id = ?
+                """,
+                tuple(
+                    (
+                        distilled_at.isoformat(),
+                        runtime,
+                        distilled_at.isoformat(),
+                        session_id,
+                    )
+                    for session_id in session_ids
+                ),
+            )
+            connection.commit()
+
 
 def session_values(session: AgentSession) -> tuple[object, ...]:
     return (
@@ -156,6 +185,12 @@ def session_values(session: AgentSession) -> tuple[object, ...]:
         session.modified_at.isoformat(),
         session.state.value,
         int(session.content_captured),
+        (
+            session.distilled_at.isoformat()
+            if session.distilled_at is not None
+            else None
+        ),
+        session.distill_runtime,
         session.created_at.isoformat(),
         session.updated_at.isoformat(),
     )
@@ -199,6 +234,12 @@ def session_from_row(row: object) -> AgentSession:
         modified_at=datetime.fromisoformat(row["modified_at"]),
         state=SessionState(row["state"]),
         content_captured=bool(row["content_captured"]),
+        distilled_at=(
+            datetime.fromisoformat(row["distilled_at"])
+            if row["distilled_at"] is not None
+            else None
+        ),
+        distill_runtime=row["distill_runtime"],
         created_at=datetime.fromisoformat(row["created_at"]),
         updated_at=datetime.fromisoformat(row["updated_at"]),
     )
