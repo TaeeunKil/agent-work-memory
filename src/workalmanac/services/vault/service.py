@@ -166,14 +166,28 @@ def normalize_workspace_permissions(root: Path) -> None:
     """Remove Codex sandbox ACLs from a disposable Windows curator workspace."""
     if os.name != "nt":
         return
-    subprocess.run(
-        ("icacls", str(root), "/reset", "/T", "/C", "/Q"),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
+    account = windows_account_name()
+    commands = [
+        ("icacls", str(root), "/inheritance:e", "/T", "/C", "/Q"),
+        ("icacls", str(root), "/grant:r", f"{account}:F", "/T", "/C", "/Q"),
+    ]
+    for command in commands:
+        subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+
+
+def windows_account_name() -> str:
+    username = os.environ.get("USERNAME")
+    domain = os.environ.get("USERDOMAIN")
+    if not username:
+        raise RuntimeError("Windows account name is unavailable for Wiki ACL repair")
+    return f"{domain}\\{username}" if domain else username
 
 
 def render_session_page(
