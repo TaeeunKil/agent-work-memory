@@ -156,6 +156,41 @@ wa distill --pending --limit 3 --using codex --allow-remote-content
 The selected IDs are printed before curator execution. It never includes
 metadata-only or already-distilled sessions.
 
+Install a separate, opt-in automatic distillation task after testing one
+manual run:
+
+```powershell
+wa auto-distill install `
+  --every 60 `
+  --limit 1 `
+  --using codex `
+  --allow-remote-content
+```
+
+Inspect, exercise, or remove it:
+
+```powershell
+wa auto-distill status
+wa auto-distill run
+wa auto-distill remove
+```
+
+The standing content grant is mandatory. Each run selects only the configured
+number of captured, not-yet-distilled sessions. Automatic sync remains a
+separate evidence-only task, and curator failures use the same validated
+workspace and rollback path as manual distillation.
+
+The standing grant expires after 7 days or 24 reserved session attempts by
+default, whichever comes first. An attempt consumes its allowance before the
+curator runs, even if that run later fails. Narrow it further when desired:
+
+```powershell
+wa auto-distill install `
+  --every 60 --limit 1 `
+  --for-days 2 --max-total 6 `
+  --using codex --allow-remote-content
+```
+
 Use a local Ollama model:
 
 ```powershell
