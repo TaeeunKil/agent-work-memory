@@ -3,7 +3,7 @@ import sqlite3
 import sys
 import threading
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -596,12 +596,10 @@ def dispatch_auto_distill(args: argparse.Namespace, app: AgentWorkMemory) -> int
         return 0
     if args.auto_distill_command == "run":
         app.vault.require_path()
-        settings = app.auto_distillation.settings()
         with foreground_progress(
-            "Automatic distillation started. "
-            f"Waiting for {settings.runtime}; this can take several minutes."
-        ):
-            receipt = app.auto_distill.run()
+            "Automatic distillation started. Checking synchronization."
+        ) as report_progress:
+            receipt = app.auto_distill.run(progress=report_progress)
         if receipt.state is AutoDistillRunState.EMPTY:
             print("No captured sessions are waiting to be distilled.")
         elif receipt.state is AutoDistillRunState.GRANT_EXHAUSTED:
@@ -609,10 +607,15 @@ def dispatch_auto_distill(args: argparse.Namespace, app: AgentWorkMemory) -> int
                 "Automatic distillation standing grant is expired or exhausted; "
                 "run `awm auto-distill install` to grant a new bounded window."
             )
-        elif receipt.state is AutoDistillRunState.SKIPPED_LOCKED:
+        elif receipt.state is AutoDistillRunState.DISTILLATION_RUNNING:
             print(
-                "Automatic distillation skipped because sync or another "
-                "distillation is running. Retry after it finishes."
+                "Automatic distillation skipped because another Wiki "
+                "distillation is already running."
+            )
+        elif receipt.state is AutoDistillRunState.SYNC_WAIT_EXPIRED:
+            print(
+                "Automatic distillation stopped because synchronization "
+                "did not finish within 10 minutes."
             )
         else:
             print(
@@ -637,20 +640,37 @@ def foreground_progress(
     message: str,
     *,
     stream: TextIO | None = None,
-) -> Iterator[None]:
+) -> Iterator[Callable[[str], None]]:
     output = stream or sys.stderr
     started_at = time.monotonic()
     stop = threading.Event()
+    stage_lock = threading.Lock()
+    current_stage = message
     interactive = output.isatty()
     print(message, file=output, flush=True)
+
+    def report_progress(stage: str) -> None:
+        nonlocal current_stage
+        with stage_lock:
+            current_stage = stage
+        if interactive:
+            print(
+                f"\r{' ' * 100}\r{stage}",
+                file=output,
+                flush=True,
+            )
+        else:
+            print(stage, file=output, flush=True)
 
     def render_elapsed() -> None:
         frames = "|/-\\"
         frame = 0
         while not stop.wait(1):
             elapsed = format_elapsed(time.monotonic() - started_at)
+            with stage_lock:
+                stage = current_stage
             print(
-                f"\r{frames[frame % len(frames)]} Codex is working "
+                f"\r{frames[frame % len(frames)]} {stage} "
                 f"| elapsed {elapsed} | percentage unavailable",
                 end="",
                 file=output,
@@ -664,7 +684,7 @@ def foreground_progress(
         worker.start()
     completed = False
     try:
-        yield
+        yield report_progress
         completed = True
     finally:
         stop.set()
@@ -674,8 +694,8 @@ def foreground_progress(
         prefix = "\r" if interactive else ""
         state = "finished" if completed else "stopped"
         print(
-            f"{prefix}{' ' * 88}\r"
-            f"Codex step {state} after {elapsed}.",
+            f"{prefix}{' ' * 100}\r"
+            f"Automatic distillation command {state} after {elapsed}.",
             file=output,
             flush=True,
         )

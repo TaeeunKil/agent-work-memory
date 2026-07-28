@@ -11,6 +11,7 @@ coverage/
 *.tsbuildinfo
 install-runtime.json
 .venv/
+.uv-cache/
 .pytest_cache/
 .pytest-tmp/
 .ruff_cache/

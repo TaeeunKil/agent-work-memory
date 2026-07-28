@@ -8,7 +8,8 @@ class AutoDistillRunState(StrEnum):
     SUCCEEDED = "succeeded"
     EMPTY = "empty"
     GRANT_EXHAUSTED = "grant-exhausted"
-    SKIPPED_LOCKED = "skipped-locked"
+    DISTILLATION_RUNNING = "distillation-running"
+    SYNC_WAIT_EXPIRED = "sync-wait-expired"
 
 
 class AutoDistillRunReceipt(AgentWorkMemoryModel):
