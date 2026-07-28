@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.0 - Unreleased
+
+### Added
+
+- Agent Work Memory (AWM), a private local memory and Markdown Wiki for work
+  performed with Codex, Claude, remote SSH hosts, and imported agent records.
+- The `awm` and `agent-work-memory` commands.
+- Windows schedules named `AWM Sync` and `AWM Auto Distill`.
+
+### Changed
+
+- The active product package is now `agentworkmemory`.
+- The default Windows state directory is `%LOCALAPPDATA%\AgentWorkMemory`.
+- The local viewer, generated Wiki navigation, documentation, and repository
+  metadata now use Agent Work Memory terminology.
+
+### Historical upstream releases
+
+The entries below describe the upstream CodeAlmanac project retained as
+reference source in this fork.
+
 ## 0.4.0 - 2026-07-10
 
 ### Changed

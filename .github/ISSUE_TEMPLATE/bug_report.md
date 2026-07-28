@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report something broken or surprising in CodeAlmanac
+about: Report something broken or surprising in Agent Work Memory
 title: "bug: "
 labels: bug
 assignees: ""
@@ -12,7 +12,7 @@ Describe the behavior you saw.
 
 ## What did you expect?
 
-Describe what you expected CodeAlmanac to do.
+Describe what you expected Agent Work Memory to do.
 
 ## Reproduction
 
@@ -24,10 +24,10 @@ Describe what you expected CodeAlmanac to do.
 
 - OS:
 - Python version:
-- CodeAlmanac version:
+- Agent Work Memory version:
 - Install method: `uv tool`, `pip`, local checkout, or other
 - Agent provider, if relevant: Codex, Claude, Cursor, or none
-- Almanac root, if relevant: `almanac/`, `docs/almanac/`, `.almanac/`, or custom
+- AWM state directory or Vault path, if relevant:
 
 ## Logs or output
 
@@ -38,4 +38,4 @@ Paste relevant output here.
 ## Extra context
 
 Add anything else that might help explain the issue, such as whether the repo
-already had a CodeAlmanac wiki or whether automation was enabled.
+already had an AWM Vault or whether automation was enabled.

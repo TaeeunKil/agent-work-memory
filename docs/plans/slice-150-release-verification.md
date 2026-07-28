@@ -1,18 +1,18 @@
-# Slice 150: Work Almanac v1 release verification
+# Slice 150: Agent Work Memory v1 release verification
 
 Status: complete.
 
 ## Outcome
 
 Prove that the development branch can be installed on Windows and used as the
-owner's private daily Work Almanac without relying on the repository virtual
+owner's private daily Agent Work Memory without relying on the repository virtual
 environment.
 
 ## Scope
 
 - Run the complete Python and static validation gates.
 - Build wheel and source distributions.
-- Inspect the wheel for Work Almanac prompts and viewer assets.
+- Inspect the wheel for Agent Work Memory prompts and viewer assets.
 - Install the branch as an editable uv tool.
 - Initialize the owner's private Markdown Vault.
 - Retain existing Codex and Claude session content with explicit local consent.
@@ -31,7 +31,7 @@ environment.
 
 ## Safety boundaries
 
-- Real transcript bodies remain in `%LOCALAPPDATA%\WorkAlmanac` and the selected
+- Real transcript bodies remain in `%LOCALAPPDATA%\AgentWorkMemory` and the selected
   private Vault.
 - Automatic sync performs collection and indexing only.
 - No distillation is run during release verification.
@@ -42,20 +42,20 @@ environment.
 
 1. Build distributions from the committed development branch.
 2. Install `wa` from this checkout with `uv tool install --editable . --force`.
-3. Run `wa setup C:\Users\user\Documents\WorkAlmanacVault
+3. Run `wa setup C:\Users\user\Documents\AgentWorkMemoryVault
    --include-content --auto --every 5`.
 4. Run `wa doctor`, `wa auto status`, and a bounded session/search check.
 5. Start the viewer on an unused loopback port, request its health endpoint,
    and stop it.
 6. Mark Slice 150 complete, run final gates, commit, and push only
-   `codex/workalmanac`.
+   `codex/agentworkmemory`.
 
 ## Read before execution
 
 - `CLAUDE.md`
 - `MANUAL.md`
-- `docs/workalmanac-v1-completion-plan.md`
-- `docs/workalmanac-user-guide.md`
+- `docs/agentworkmemory-v1-completion-plan.md`
+- `docs/agentworkmemory-user-guide.md`
 
 ## Rollback
 
@@ -66,8 +66,8 @@ environment.
 
 ## Result
 
-- Wheel and sdist built successfully with all `workalmanac` resources.
-- The user-level editable tool exposes `wa` and `workalmanac`.
+- Wheel and sdist built successfully with all `agentworkmemory` resources.
+- The user-level editable tool exposes `wa` and `agentworkmemory`.
 - The private Vault and five-minute scheduled sync are installed.
 - Real-data runtime diagnostics, indexed search, and loopback viewer checks
   passed without exposing transcript content.

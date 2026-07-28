@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Agent Work Memory</title>
+    <link rel="stylesheet" href="/assets/app.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="rail">
+        <a class="brand" href="#/overview" aria-label="Agent Work Memory home">
+          <span class="brand-mark">AWM</span>
+          <span>Agent Work<br>Memory</span>
+        </a>
+
+        <nav class="primary-nav" aria-label="Primary">
+          <button class="nav-item is-active" data-view="overview">Today</button>
+          <button class="nav-item" data-view="sessions">Sessions</button>
+          <button class="nav-item" data-view="knowledge">Knowledge</button>
+          <button class="nav-item" data-view="activity">Activity</button>
+        </nav>
+
+        <div class="rail-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="rail-status">Local vault</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <form id="search-form" class="search" role="search">
+            <label class="sr-only" for="search-input">Search Agent Work Memory</label>
+            <span class="search-glyph" aria-hidden="true">⌕</span>
+            <input
+              id="search-input"
+              type="search"
+              autocomplete="off"
+              placeholder="Search decisions, sessions, procedures…"
+            >
+            <button class="search-submit" type="submit" aria-label="Search">↵</button>
+            <kbd>Enter</kbd>
+          </form>
+          <button id="sync-button" class="primary-action" type="button">
+            Sync transcripts
+          </button>
+        </header>
+
+        <section id="workspace" class="workspace" aria-live="polite">
+          <div class="loading">Opening your memory…</div>
+        </section>
+      </main>
+
+      <aside id="inspector" class="inspector" aria-label="Selected item">
+        <button id="close-inspector" class="inspector-close" type="button">
+          Close
+        </button>
+        <div id="inspector-content" class="inspector-content">
+          <p class="eyebrow">Context</p>
+          <h2>Select a record</h2>
+          <p class="quiet">
+            Choose a session or Wiki page to inspect its evidence and links.
+          </p>
+        </div>
+      </aside>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>

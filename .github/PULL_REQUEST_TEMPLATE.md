@@ -17,10 +17,10 @@ What problem does this solve?
 # uvx twine check dist/*
 ```
 
-## Docs and wiki
+## Docs and Wiki
 
 - [ ] README/docs updated if user-facing behavior changed.
-- [ ] `.almanac/` wiki updated if an implementation decision, workflow, invariant, or gotcha changed.
+- [ ] AWM Wiki updated if a durable decision, workflow, invariant, or gotcha changed.
 - [ ] Not applicable.
 
 ## Notes for reviewers

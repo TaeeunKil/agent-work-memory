@@ -34,7 +34,7 @@ jobs:
         run: uv run pytest
 
       - name: CLI smoke
-        run: uv run codealmanac --help
+        run: uv run awm --help
 
       - name: Diff hygiene
         run: git diff --check

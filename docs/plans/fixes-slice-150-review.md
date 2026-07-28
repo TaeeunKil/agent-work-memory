@@ -49,11 +49,11 @@ refresh explicitly at their existing write boundaries.
 - `CLAUDE.md`
 - `MANUAL.md`
 - `.claude/agents/review.md`
-- `src/workalmanac/integrations/curators/yoke.py`
+- `src/agentworkmemory/integrations/curators/yoke.py`
 
 ## Verification
 
 - Focused Yoke curator test.
-- Complete Work Almanac regression suite.
+- Complete Agent Work Memory regression suite.
 - Ruff format and lint.
 - Real installed-tool diagnostics.
