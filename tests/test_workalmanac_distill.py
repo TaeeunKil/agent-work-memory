@@ -379,7 +379,18 @@ def test_windows_yoke_curator_uses_standalone_codex_cli(tmp_path: Path):
 
     assert curator_surface("codex", "win32") == "codex_cli"
     assert curator_surface("codex", "linux") == "codex_app_server"
-    assert adapter.harness(vault).surface == "codex_cli"
+    harness = adapter.harness(vault)
+    request = CuratorRunRequest(
+        runtime="codex",
+        vault_path=vault,
+        prompt="Maintain durable Wiki knowledge.",
+        content_access=ContentAccess.SELECTED_REMOTE,
+    )
+    options = run_options(request, surface="codex_cli")
+
+    assert harness.surface == "codex_cli"
+    assert options.provider is None
+    assert harness.plan(options).ok
 
 
 def test_windows_yoke_curator_prefers_standalone_install(

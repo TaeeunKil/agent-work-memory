@@ -283,6 +283,29 @@ def test_failed_auto_distill_attempt_still_consumes_standing_grant(
     assert "expired or exhausted" in capsys.readouterr().out
 
 
+def test_operator_can_refund_a_verified_pre_model_failure(tmp_path: Path):
+    scheduler = FakeAutoDistillScheduler()
+    curator = FakeCurator()
+    app = auto_distill_app(tmp_path, scheduler, curator)
+    app.auto_distillation.install(
+        AutoDistillSettings(
+            interval_minutes=60,
+            limit=1,
+            runtime="codex",
+            content_access=ContentAccess.SELECTED_REMOTE,
+            expires_at=datetime.now(UTC) + timedelta(days=1),
+            max_sessions_total=3,
+            sessions_reserved=2,
+        )
+    )
+
+    refunded = app.auto_distillation.refund_sessions(1)
+
+    assert refunded.sessions_reserved == 1
+    with pytest.raises(ValueError, match="more sessions"):
+        app.auto_distillation.refund_sessions(2)
+
+
 def test_local_preflight_failure_does_not_consume_standing_grant(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
