@@ -1,7 +1,9 @@
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from filelock import FileLock
 
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import build_parser, dispatch
@@ -95,6 +97,55 @@ def test_viewer_search_hides_generated_and_duplicate_session_pages(tmp_path: Pat
     assert not any(result["identity"] == "Home.md" for result in results)
 
 
+def test_viewer_aggregates_topics_and_evidence_under_project_hubs(
+    tmp_path: Path,
+):
+    app, session = viewer_fixture(tmp_path)
+    vault = app.vault.require_path()
+    source = f"""sources:
+  - session_id: {session.session_id}
+    provider: manual
+"""
+    (vault / "projects" / "agent-work-memory.md").write_text(
+        f"""---
+{source}---
+# Agent Work Memory
+
+Topics: [[decisions/topic-pages]].
+""",
+        encoding="utf-8",
+    )
+    (vault / "decisions" / "topic-pages.md").write_text(
+        f"""---
+{source}---
+# Topic pages
+
+Project: [[projects/agent-work-memory]].
+""",
+        encoding="utf-8",
+    )
+    app.wiki.refresh()
+    client = TestClient(create_viewer_app(app))
+
+    projects = client.get("/api/projects")
+    detail = client.get(
+        "/api/project",
+        params={"path": "projects/agent-work-memory.md"},
+    )
+
+    assert projects.status_code == 200
+    project = projects.json()[0]
+    assert Path(project["path"]) == Path("projects/agent-work-memory.md")
+    assert project["title"] == "Agent Work Memory"
+    assert project["topic_count"] == 1
+    assert project["source_session_ids"] == [session.session_id]
+    assert detail.status_code == 200
+    assert Path(detail.json()["topics"][0]["path"]) == Path(
+        "decisions/topic-pages.md"
+    )
+    assert detail.json()["sessions"][0]["session_id"] == session.session_id
+
+
 def test_viewer_reports_schedules_in_next_run_order(
     tmp_path: Path,
     monkeypatch,
@@ -168,6 +219,93 @@ def test_viewer_mutations_require_header_and_record_receipts(tmp_path: Path):
     assert distilled.json()["status"] == "succeeded"
     assert receipts["sync"][0]["run_id"] == synced.json()["run_id"]
     assert receipts["distill"][0]["run_id"] == distilled.json()["run_id"]
+
+
+def test_viewer_can_distill_a_bounded_pending_batch(tmp_path: Path):
+    app, session = viewer_fixture(tmp_path)
+    client = TestClient(create_viewer_app(app))
+
+    distilled = client.post(
+        "/api/distill/pending",
+        json={
+            "limit": 10,
+            "runtime": "viewer-local",
+            "content_access": "selected-local",
+        },
+        headers={"X-AWM-Action": "viewer"},
+    )
+
+    assert distilled.status_code == 200
+    assert distilled.json()["session_ids"] == [session.session_id]
+    assert app.sessions.get(session.session_id).distilled_at is not None
+    activity = client.get("/api/activity").json()[0]
+    assert activity["task"] == "auto-distill"
+    assert activity["status"] == "succeeded"
+    assert activity["summary"].startswith("Wiki build completed")
+
+
+def test_viewer_wiki_build_survives_unavailable_activity_ledger(
+    tmp_path: Path,
+    monkeypatch,
+):
+    app, session = viewer_fixture(tmp_path)
+
+    def fail_activity(*_args, **_kwargs):
+        raise OSError("activity ledger unavailable")
+
+    monkeypatch.setattr(app.activity, "begin", fail_activity)
+    client = TestClient(create_viewer_app(app))
+
+    distilled = client.post(
+        "/api/distill/pending",
+        json={
+            "limit": 1,
+            "runtime": "viewer-local",
+            "content_access": "selected-local",
+        },
+        headers={"X-AWM-Action": "viewer"},
+    )
+
+    assert distilled.status_code == 200
+    assert distilled.json()["session_ids"] == [session.session_id]
+
+
+def test_viewer_wiki_build_waits_for_active_synchronization(tmp_path: Path):
+    app, _ = viewer_fixture(tmp_path)
+    lock_acquired = threading.Event()
+    release_lock = threading.Event()
+
+    def hold_sync_lock() -> None:
+        with FileLock(tmp_path / "state" / "sync.lock"):
+            lock_acquired.set()
+            release_lock.wait(timeout=0.2)
+
+    holder = threading.Thread(target=hold_sync_lock)
+    holder.start()
+    assert lock_acquired.wait(timeout=1)
+    client = TestClient(create_viewer_app(app))
+
+    distilled = client.post(
+        "/api/distill/pending",
+        json={
+            "limit": 1,
+            "runtime": "viewer-local",
+            "content_access": "selected-local",
+        },
+        headers={"X-AWM-Action": "viewer"},
+    )
+    holder.join(timeout=1)
+
+    assert distilled.status_code == 200
+    activity = client.get("/api/activity").json()[0]
+    assert any(
+        line.startswith("Synchronization is running")
+        for line in activity["log_lines"]
+    )
+    assert any(
+        line.startswith("Synchronization finished")
+        for line in activity["log_lines"]
+    )
 
 
 def test_viewer_exposes_runtime_readiness_without_credentials(tmp_path: Path):

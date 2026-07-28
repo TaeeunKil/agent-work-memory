@@ -1,3 +1,5 @@
+import os
+from contextlib import suppress
 from importlib.resources import files
 from pathlib import Path
 
@@ -8,8 +10,14 @@ from pydantic import Field
 
 from agentworkmemory.app import AgentWorkMemory
 from agentworkmemory.core import AgentWorkMemoryModel
+from agentworkmemory.services.activity import ActivityRun, ActivityTask
 from agentworkmemory.services.curators.models import ContentAccess
+from agentworkmemory.services.distillation.models import DistillReceipt
 from agentworkmemory.workflows.distill import DistillSessions
+from agentworkmemory.workflows.distill.coordination import (
+    DistillationAlreadyRunning,
+    SynchronizationWaitExpired,
+)
 from agentworkmemory.workflows.sync import SyncAgentRecords
 
 ASSET_TYPES = {
@@ -26,6 +34,13 @@ class ViewerSyncRequest(AgentWorkMemoryModel):
 
 class ViewerDistillRequest(AgentWorkMemoryModel):
     session_ids: tuple[str, ...] = Field(min_length=1)
+    runtime: str
+    model: str | None = None
+    content_access: ContentAccess = ContentAccess.METADATA_ONLY
+
+
+class ViewerPendingDistillRequest(AgentWorkMemoryModel):
+    limit: int = Field(default=10, ge=1, le=20)
     runtime: str
     model: str | None = None
     content_access: ContentAccess = ContentAccess.METADATA_ONLY
@@ -88,6 +103,20 @@ def create_viewer_app(memory: AgentWorkMemory) -> FastAPI:
     @server.get("/api/pages")
     def pages() -> list[object]:
         return [page.model_dump(mode="json") for page in memory.viewer.pages()]
+
+    @server.get("/api/projects")
+    def projects() -> list[object]:
+        return [
+            project.model_dump(mode="json")
+            for project in memory.viewer.projects()
+        ]
+
+    @server.get("/api/project")
+    def project(path: str = Query(min_length=1)) -> dict[str, object]:
+        try:
+            return memory.viewer.project(path).model_dump(mode="json")
+        except (KeyError, OSError, UnicodeError, ValueError) as error:
+            raise HTTPException(status_code=404, detail="Project not found") from error
 
     @server.get("/api/page")
     def page(path: str = Query(min_length=1)) -> dict[str, object]:
@@ -163,7 +192,8 @@ def create_viewer_app(memory: AgentWorkMemory) -> FastAPI:
         x_awm_action: str | None = Header(default=None),
     ) -> dict[str, object]:
         require_local_action(x_awm_action)
-        receipt = memory.distill.run(
+        receipt = run_viewer_distill(
+            memory,
             DistillSessions(
                 session_ids=request.session_ids,
                 runtime=request.runtime,
@@ -173,7 +203,87 @@ def create_viewer_app(memory: AgentWorkMemory) -> FastAPI:
         )
         return receipt.model_dump(mode="json")
 
+    @server.post("/api/distill/pending")
+    def distill_pending(
+        request: ViewerPendingDistillRequest,
+        x_awm_action: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        require_local_action(x_awm_action)
+        pending = memory.sessions.pending_distillation(request.limit)
+        if not pending:
+            raise HTTPException(
+                status_code=409,
+                detail="No captured sessions are waiting to be distilled.",
+            )
+        receipt = run_viewer_distill(
+            memory,
+            DistillSessions(
+                session_ids=tuple(session.session_id for session in pending),
+                runtime=request.runtime,
+                model=request.model,
+                content_access=request.content_access,
+            )
+        )
+        return receipt.model_dump(mode="json")
+
     return server
+
+
+def run_viewer_distill(
+    memory: AgentWorkMemory,
+    request: DistillSessions,
+) -> DistillReceipt:
+    activity: ActivityRun | None = None
+    with suppress(OSError):
+        activity = memory.activity.begin(
+            ActivityTask.AUTO_DISTILL,
+            process_id=os.getpid(),
+        )
+        memory.activity.append_log(
+            activity,
+            f"Building Wiki from {len(request.session_ids)} selected session(s).",
+        )
+
+    def record_progress(message: str) -> None:
+        if activity is not None:
+            with suppress(OSError):
+                memory.activity.append_log(activity, message)
+
+    def finish_activity(exit_code: int) -> None:
+        if activity is not None:
+            with suppress(OSError):
+                memory.activity.finish(activity, exit_code=exit_code)
+
+    try:
+        with (
+            memory.distill_coordination.exclusive(),
+            memory.distill_coordination.after_synchronization(record_progress),
+        ):
+            receipt = memory.distill.run(request)
+    except DistillationAlreadyRunning as error:
+        record_progress("Skipped because another Wiki distillation is running.")
+        finish_activity(0)
+        raise HTTPException(
+            status_code=409,
+            detail="Another Wiki distillation is already running.",
+        ) from error
+    except SynchronizationWaitExpired as error:
+        record_progress("Skipped because synchronization exceeded the wait limit.")
+        finish_activity(0)
+        raise HTTPException(
+            status_code=409,
+            detail="Synchronization did not finish within 10 minutes.",
+        ) from error
+    except Exception as error:
+        record_progress(f"Wiki build failed: {type(error).__name__}.")
+        finish_activity(1)
+        raise
+    record_progress(
+        "Wiki build completed; "
+        f"{len(receipt.changed_files)} topic page(s) changed."
+    )
+    finish_activity(0)
+    return receipt
 
 
 def require_local_action(value: str | None) -> None:

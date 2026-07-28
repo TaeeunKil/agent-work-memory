@@ -218,6 +218,11 @@ def test_distill_prompt_supplies_navigable_session_link(tmp_path: Path):
     assert (
         f"[[inbox/agent-sessions/manual-{session.session_id}|Evidence navigation]]"
     ) in prompt
+    assert "A durable page is one canonical topic" in prompt
+    assert "Merge new evidence into an existing page" in prompt
+    assert "Maintain one projects/<project-slug>.md hub" in prompt
+    assert "Preserve existing sources and append each supporting session once" in prompt
+    assert f"- Workspace: {session.cwd or 'unknown'}" in prompt
     assert "Never edit README.md, Home.md, _index.md" in prompt
 
 

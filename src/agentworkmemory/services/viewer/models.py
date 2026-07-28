@@ -61,3 +61,16 @@ class ViewerPageDetail(AgentWorkMemoryModel):
     category: str
     html: str
     backlinks: tuple[ViewerPage, ...]
+
+
+class ViewerProject(AgentWorkMemoryModel):
+    path: Path
+    title: str
+    topic_count: int
+    source_session_ids: tuple[str, ...]
+
+
+class ViewerProjectDetail(AgentWorkMemoryModel):
+    page: ViewerPageDetail
+    topics: tuple[ViewerPage, ...]
+    sessions: tuple[ViewerSession, ...]
