@@ -13,6 +13,9 @@ from agentworkmemory.core import AgentWorkMemoryModel
 from agentworkmemory.services.activity import ActivityRun, ActivityTask
 from agentworkmemory.services.curators.models import ContentAccess
 from agentworkmemory.services.distillation.models import DistillReceipt
+from agentworkmemory.services.distillation.outcomes import (
+    summarize_session_outcomes,
+)
 from agentworkmemory.workflows.distill import DistillSessions
 from agentworkmemory.workflows.distill.coordination import (
     DistillationAlreadyRunning,
@@ -281,6 +284,9 @@ def run_viewer_distill(
     record_progress(
         "Wiki build completed; "
         f"{len(receipt.changed_files)} topic page(s) changed."
+    )
+    record_progress(
+        f"Session outcomes: {summarize_session_outcomes(receipt.session_outcomes)}."
     )
     finish_activity(0)
     return receipt

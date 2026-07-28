@@ -410,7 +410,43 @@ function openReceipt(runId, type) {
       ${timelineStep("Started", receipt.started_at, true)}
       ${timelineStep(activityStatusLabel(receipt.status), receipt.finished_at, receipt.status === "succeeded")}
     </div>
+    ${distillOutcomeDetails(receipt)}
   `;
+}
+
+function distillOutcomeDetails(receipt) {
+  if (!receipt.session_outcomes || receipt.session_outcomes.length === 0) return "";
+  return `
+    <div class="inspector-section">
+      <div class="section-heading">
+        <p class="eyebrow">Session outcomes</p>
+        <span>${receipt.session_outcomes.length} reviewed</span>
+      </div>
+      <div class="record-list">
+        ${receipt.session_outcomes.map((outcome) => `
+          <div class="record-row">
+            <div>
+              <strong>${escapeHtml(distillDispositionLabel(outcome.disposition))}</strong>
+              <span>${escapeHtml(outcome.reason)}</span>
+              ${outcome.pages.length
+                ? `<span>${escapeHtml(outcome.pages.join(", "))}</span>`
+                : ""}
+            </div>
+            <span>${escapeHtml(outcome.session_id)}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function distillDispositionLabel(value) {
+  return {
+    created: "Created",
+    merged: "Merged",
+    "already-covered": "Already covered",
+    "no-durable-knowledge": "No durable knowledge",
+  }[value] || value;
 }
 
 async function search(event) {

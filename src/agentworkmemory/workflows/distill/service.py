@@ -9,6 +9,10 @@ from agentworkmemory.services.distillation.models import (
     DistillReceipt,
     DistillStatus,
 )
+from agentworkmemory.services.distillation.outcomes import (
+    classify_session_outcomes,
+    summarize_session_outcomes,
+)
 from agentworkmemory.services.distillation.service import DistillationService
 from agentworkmemory.services.search.service import SearchService
 from agentworkmemory.services.sessions.service import SessionsService
@@ -58,6 +62,8 @@ class DistillSessionsWorkflow:
         )
         original_snapshot = None
         changed = ()
+        outcomes = ()
+        before_pages = self.wiki.pages()
         try:
             self.curators.ensure_ready(request.runtime)
             with self.vault.curator_workspace() as (
@@ -82,6 +88,12 @@ class DistillSessionsWorkflow:
                 self.vault.normalize_curator_workspace_permissions(workspace)
                 changed = self.vault.validate_distill_changes(snapshot)
                 self.vault.apply_distill_changes(workspace, changed)
+            outcomes = classify_session_outcomes(
+                request.session_ids,
+                before=before_pages,
+                after=self.wiki.pages(),
+                changed_files=changed,
+            )
             distilled_at = datetime.now(UTC)
             for session, events in selected:
                 projected = session.model_copy(
@@ -112,8 +124,10 @@ class DistillSessionsWorkflow:
             receipt,
             status=DistillStatus.SUCCEEDED,
             changed_files=changed,
+            session_outcomes=outcomes,
             output_summary=(
-                f"{request.runtime} completed; {len(changed)} durable file(s) changed"
+                f"{request.runtime} completed; {len(changed)} durable file(s) "
+                f"changed; {summarize_session_outcomes(outcomes)}"
             ),
         )
 

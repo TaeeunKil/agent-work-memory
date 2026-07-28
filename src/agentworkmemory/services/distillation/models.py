@@ -13,6 +13,20 @@ class DistillStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class SessionDistillDisposition(StrEnum):
+    CREATED = "created"
+    MERGED = "merged"
+    ALREADY_COVERED = "already-covered"
+    NO_DURABLE_KNOWLEDGE = "no-durable-knowledge"
+
+
+class SessionDistillOutcome(AgentWorkMemoryModel):
+    session_id: str
+    disposition: SessionDistillDisposition
+    reason: str
+    pages: tuple[Path, ...] = ()
+
+
 class DistillReceipt(AgentWorkMemoryModel):
     run_id: str
     runtime: str
@@ -21,6 +35,7 @@ class DistillReceipt(AgentWorkMemoryModel):
     session_ids: tuple[str, ...]
     status: DistillStatus
     changed_files: tuple[Path, ...] = ()
+    session_outcomes: tuple[SessionDistillOutcome, ...] = ()
     output_summary: str | None = None
     started_at: datetime
     finished_at: datetime | None = None

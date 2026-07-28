@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS distill_receipts (
   session_ids     TEXT NOT NULL,
   status          TEXT NOT NULL,
   changed_files   TEXT NOT NULL,
+  session_outcomes TEXT NOT NULL DEFAULT '[]',
   output_summary  TEXT,
   started_at      TEXT NOT NULL,
   finished_at     TEXT
@@ -102,6 +103,12 @@ def connect(path: Path) -> sqlite3.Connection:
     connection.executescript(SCHEMA)
     ensure_column(connection, "agent_sessions", "distilled_at", "TEXT")
     ensure_column(connection, "agent_sessions", "distill_runtime", "TEXT")
+    ensure_column(
+        connection,
+        "distill_receipts",
+        "session_outcomes",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )
     connection.commit()
     return connection
 
