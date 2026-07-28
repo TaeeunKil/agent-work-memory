@@ -1,9 +1,11 @@
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
-from workalmanac.integrations.automation.windows import run_schtasks
+from workalmanac.integrations.automation.windows import (
+    background_python_executable,
+    run_schtasks,
+)
 from workalmanac.services.auto_distillation.models import AutoDistillSettings
 
 TASK_NAME = "WorkAlmanac Auto Distill"
@@ -50,9 +52,9 @@ class WindowsAutoDistillSchedulerAdapter:
 def scheduled_auto_distill_action(state_dir: Path) -> str:
     return subprocess.list2cmdline(
         (
-            sys.executable,
+            background_python_executable(),
             "-m",
-            "workalmanac.cli",
+            "workalmanac.scheduled",
             "--state-dir",
             str(state_dir),
             "auto-distill",

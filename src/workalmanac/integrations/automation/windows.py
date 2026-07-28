@@ -44,9 +44,9 @@ class WindowsSchedulerAdapter:
 
 def scheduled_sync_action(settings: AutoSyncSettings, state_dir: Path) -> str:
     command = [
-        sys.executable,
+        background_python_executable(),
         "-m",
-        "workalmanac.cli",
+        "workalmanac.scheduled",
         "--state-dir",
         state_dir,
         "sync",
@@ -58,6 +58,10 @@ def scheduled_sync_action(settings: AutoSyncSettings, state_dir: Path) -> str:
     if settings.include_content:
         command.append("--include-content")
     return subprocess.list2cmdline(command)
+
+
+def background_python_executable() -> str:
+    return str(Path(sys.executable).with_name("pythonw.exe"))
 
 
 def run_schtasks(arguments: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
