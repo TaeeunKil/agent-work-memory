@@ -39,6 +39,11 @@ wa auto-distill install \
 - Windows scheduled runs use `pythonw.exe`, so periodic sync and distillation
   do not open terminal tabs. Their bounded UTF-8 logs live under
   `<state-dir>/logs/scheduled-sync.log` and `scheduled-auto-distill.log`.
+- Windows curation uses the explicitly installed standalone Codex CLI instead
+  of the Microsoft Store desktop app executable, avoiding app-sandbox ACLs on
+  curator-created Markdown.
+- Sync and automatic distillation share the sync lock before either writes to
+  SQLite. A colliding run skips without reserving remote-content allowance.
 - Curator-created files are retried briefly when Windows still holds a write
   lock. A persistent lock becomes a concise CLI error instead of a traceback.
 - The scheduled command contains no session IDs, transcript text, model

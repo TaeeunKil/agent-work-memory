@@ -196,6 +196,7 @@ def create_app(
         sessions,
         distill,
         resolved.state_dir / "auto-distill.lock",
+        resolved.state_dir / "sync.lock",
     )
     return WorkAlmanac(
         automation=automation,

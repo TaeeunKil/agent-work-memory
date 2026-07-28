@@ -36,13 +36,14 @@ class SyncAgentRecordsWorkflow:
         self.lock_path = lock_path
 
     def run(self, request: SyncAgentRecords) -> SyncReceipt:
-        receipt = self.synchronization.begin(
-            providers=request.providers,
-            include_content=request.include_content,
-        )
         lock = FileLock(self.lock_path, timeout=0)
+        receipt = None
         try:
             with lock:
+                receipt = self.synchronization.begin(
+                    providers=request.providers,
+                    include_content=request.include_content,
+                )
                 local_collection = self.collect.collect(
                     CollectAgentRecords(
                         providers=request.providers,
@@ -61,16 +62,17 @@ class SyncAgentRecordsWorkflow:
                 )
                 self.search.refresh()
         except Timeout:
-            return self.synchronization.finish(
-                receipt,
-                status=SyncStatus.SKIPPED_LOCKED,
+            return self.synchronization.skipped_locked(
+                providers=request.providers,
+                include_content=request.include_content,
             )
         except Exception as error:
-            self.synchronization.finish(
-                receipt,
-                status=SyncStatus.FAILED,
-                error_type=type(error).__name__,
-            )
+            if receipt is not None:
+                self.synchronization.finish(
+                    receipt,
+                    status=SyncStatus.FAILED,
+                    error_type=type(error).__name__,
+                )
             raise RuntimeError(
                 "Work Almanac sync failed; inspect sync status"
             ) from error

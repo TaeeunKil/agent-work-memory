@@ -20,17 +20,20 @@ class AutoDistillWorkflow:
         sessions: SessionsService,
         distill: DistillSessionsWorkflow,
         lock_path: Path,
+        coordination_lock_path: Path,
     ):
         self.automation = automation
         self.sessions = sessions
         self.distill = distill
         self.lock_path = lock_path
+        self.coordination_lock_path = coordination_lock_path
 
     def run(self) -> AutoDistillRunReceipt:
         settings = self.automation.settings()
         lock = FileLock(self.lock_path, timeout=0)
+        coordination_lock = FileLock(self.coordination_lock_path, timeout=0)
         try:
-            with lock:
+            with lock, coordination_lock:
                 batch_limit = self.automation.available_batch_limit()
                 if batch_limit == 0:
                     return AutoDistillRunReceipt(
