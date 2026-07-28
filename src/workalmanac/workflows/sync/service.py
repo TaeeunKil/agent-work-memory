@@ -11,6 +11,11 @@ from workalmanac.services.synchronization import (
 from workalmanac.workflows.collect import (
     CollectAgentRecords,
     CollectAgentRecordsWorkflow,
+    combine_collection_receipts,
+)
+from workalmanac.workflows.remote_sync import (
+    SyncRemoteRecords,
+    SyncRemoteRecordsWorkflow,
 )
 from workalmanac.workflows.sync.models import SyncAgentRecords
 
@@ -19,11 +24,13 @@ class SyncAgentRecordsWorkflow:
     def __init__(
         self,
         collect: CollectAgentRecordsWorkflow,
+        remote_sync: SyncRemoteRecordsWorkflow,
         search: SearchService,
         synchronization: SynchronizationService,
         lock_path: Path,
     ):
         self.collect = collect
+        self.remote_sync = remote_sync
         self.search = search
         self.synchronization = synchronization
         self.lock_path = lock_path
@@ -36,12 +43,21 @@ class SyncAgentRecordsWorkflow:
         lock = FileLock(self.lock_path, timeout=0)
         try:
             with lock:
-                collection = self.collect.collect(
+                local_collection = self.collect.collect(
                     CollectAgentRecords(
                         providers=request.providers,
                         home=request.home,
                         include_content=request.include_content,
                     )
+                )
+                remote_collection = self.remote_sync.run(
+                    SyncRemoteRecords(
+                        providers=request.providers,
+                        include_content=request.include_content,
+                    )
+                )
+                collection = combine_collection_receipts(
+                    (local_collection, remote_collection.collection)
                 )
                 self.search.refresh()
         except Timeout:

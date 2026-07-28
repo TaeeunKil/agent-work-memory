@@ -92,3 +92,20 @@ def stable_source_id(discovered: DiscoveredAgentSession) -> str:
         f"{discovered.provider_session_id}\0{discovered.source_path}"
     )
     return f"src_{sha256(identity.encode()).hexdigest()[:24]}"
+
+
+def combine_collection_receipts(
+    receipts: tuple[CollectionReceipt, ...],
+) -> CollectionReceipt:
+    return CollectionReceipt(
+        sessions_discovered=sum(item.sessions_discovered for item in receipts),
+        sessions_updated=sum(item.sessions_updated for item in receipts),
+        events_added=sum(item.events_added for item in receipts),
+        session_ids=tuple(
+            dict.fromkeys(
+                session_id
+                for item in receipts
+                for session_id in item.session_ids
+            )
+        ),
+    )
