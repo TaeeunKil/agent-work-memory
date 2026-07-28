@@ -31,6 +31,7 @@ DURABLE_DIRECTORIES = frozenset(
     }
 )
 CATALOG_DIRECTORIES = DURABLE_DIRECTORIES | {"imports"}
+CURATOR_IGNORED_ROOTS = frozenset({"inbox"})
 
 
 class VaultService:
@@ -88,12 +89,21 @@ class VaultService:
     def snapshot(self) -> VaultSnapshot:
         return VaultSnapshot.capture(self.require_path())
 
+    def validate_curator_source(self) -> None:
+        VaultSnapshot.capture(
+            self.require_path(),
+            ignored_roots=CURATOR_IGNORED_ROOTS,
+        )
+
     @contextmanager
     def curator_workspace(
         self,
     ) -> Iterator[tuple[Path, VaultSnapshot, VaultSnapshot]]:
         vault_path = self.require_path()
-        original = VaultSnapshot.capture(vault_path)
+        original = VaultSnapshot.capture(
+            vault_path,
+            ignored_roots=CURATOR_IGNORED_ROOTS,
+        )
         workspace_root = self.config.state_dir / "distill-workspaces"
         workspace_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(

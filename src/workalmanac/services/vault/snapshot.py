@@ -8,13 +8,19 @@ MAX_SNAPSHOT_BYTES = 50 * 1024 * 1024
 class VaultSnapshot:
     root: Path
     files: dict[Path, bytes]
+    ignored_roots: frozenset[str] = frozenset()
 
     @classmethod
-    def capture(cls, root: Path) -> "VaultSnapshot":
+    def capture(
+        cls,
+        root: Path,
+        *,
+        ignored_roots: frozenset[str] = frozenset(),
+    ) -> "VaultSnapshot":
         resolved_root = root.resolve()
         files: dict[Path, bytes] = {}
         total_bytes = 0
-        for path in vault_files(resolved_root):
+        for path in vault_files(resolved_root, ignored_roots=ignored_roots):
             relative = path.relative_to(resolved_root)
             content = path.read_bytes()
             total_bytes += len(content)
@@ -24,12 +30,19 @@ class VaultSnapshot:
                     f"(limit: {MAX_SNAPSHOT_BYTES} bytes)"
                 )
             files[relative] = content
-        return cls(root=resolved_root, files=files)
+        return cls(
+            root=resolved_root,
+            files=files,
+            ignored_roots=ignored_roots,
+        )
 
     def changed_files(self) -> tuple[Path, ...]:
         current = {
             path.relative_to(self.root): path.read_bytes()
-            for path in vault_files(self.root)
+            for path in vault_files(
+                self.root,
+                ignored_roots=self.ignored_roots,
+            )
         }
         changed = {
             relative
@@ -39,7 +52,13 @@ class VaultSnapshot:
         return tuple(sorted(changed, key=lambda path: path.as_posix()))
 
     def restore(self) -> None:
-        current = {path.relative_to(self.root): path for path in vault_files(self.root)}
+        current = {
+            path.relative_to(self.root): path
+            for path in vault_files(
+                self.root,
+                ignored_roots=self.ignored_roots,
+            )
+        }
         for relative, path in current.items():
             if relative not in self.files:
                 path.unlink()
@@ -50,11 +69,15 @@ class VaultSnapshot:
             target.write_bytes(content)
 
 
-def vault_files(root: Path) -> tuple[Path, ...]:
+def vault_files(
+    root: Path,
+    *,
+    ignored_roots: frozenset[str] = frozenset(),
+) -> tuple[Path, ...]:
     files: list[Path] = []
     for path in root.rglob("*"):
         relative = path.relative_to(root)
-        if relative.parts and relative.parts[0] == ".git":
+        if relative.parts and relative.parts[0] in ignored_roots | {".git"}:
             continue
         if path.is_symlink():
             raise ValueError(

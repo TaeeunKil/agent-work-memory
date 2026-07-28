@@ -16,6 +16,7 @@ from workalmanac.services.curators.models import (
     CuratorRunResult,
     CuratorRunStatus,
 )
+from workalmanac.services.vault import snapshot as vault_snapshot
 from workalmanac.settings import WorkAlmanacConfig
 
 
@@ -231,6 +232,35 @@ def test_failed_auto_distill_attempt_still_consumes_standing_grant(
     assert dispatch(run, app) == 0
     assert len(curator.requests) == 1
     assert "expired or exhausted" in capsys.readouterr().out
+
+
+def test_local_preflight_failure_does_not_consume_standing_grant(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    scheduler = FakeAutoDistillScheduler()
+    curator = FakeCurator()
+    app = auto_distill_app(tmp_path, scheduler, curator)
+    vault = app.vault.initialize(tmp_path / "vault")
+    add_note(app, "Pending evidence stays outside the curator snapshot.")
+    (vault / "projects" / "too-large.md").write_bytes(b"x" * 8192)
+    monkeypatch.setattr(vault_snapshot, "MAX_SNAPSHOT_BYTES", 4096)
+    app.auto_distillation.install(
+        AutoDistillSettings(
+            interval_minutes=60,
+            limit=1,
+            runtime="codex",
+            content_access=ContentAccess.SELECTED_REMOTE,
+            expires_at=datetime.now(UTC) + timedelta(days=1),
+            max_sessions_total=1,
+        )
+    )
+
+    with pytest.raises(ValueError, match="Vault is too large"):
+        app.auto_distill.run()
+
+    assert app.auto_distillation.settings().sessions_reserved == 0
+    assert curator.requests == []
 
 
 def test_scheduled_auto_distill_action_contains_only_private_state_pointer(
