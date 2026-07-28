@@ -24,8 +24,9 @@ def distill_prompt(
         "",
         "Selected sessions:",
     ]
-    remaining = MAX_EVIDENCE_CHARS
+    per_session_budget = MAX_EVIDENCE_CHARS // max(1, len(selected))
     for session, events in selected:
+        remaining = per_session_budget
         session_alias = (
             session.title
             if content_access is not ContentAccess.METADATA_ONLY

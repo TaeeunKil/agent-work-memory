@@ -150,7 +150,17 @@ def build_parser() -> argparse.ArgumentParser:
         "distill",
         help="Promote selected sessions into durable Wiki knowledge.",
     )
-    distill.add_argument("session_ids", nargs="+")
+    distill.add_argument("session_ids", nargs="*")
+    distill.add_argument(
+        "--pending",
+        action="store_true",
+        help="Select newest captured sessions that have not been distilled.",
+    )
+    distill.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum pending sessions to select (default: 3, maximum: 20).",
+    )
     distill.add_argument("--using", dest="runtime", default="codex")
     distill.add_argument("--model")
     content_access = distill.add_mutually_exclusive_group()
@@ -242,9 +252,17 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
         return 0
     if args.command == "distill":
         app.vault.require_path()
+        session_ids = distill_session_ids(args, app)
+        if not session_ids:
+            print("No captured sessions are waiting to be distilled.")
+            return 0
+        if args.pending:
+            print(f"Selected {len(session_ids)} pending session(s):")
+            for session_id in session_ids:
+                print(session_id)
         receipt = app.distill.run(
             DistillSessions(
-                session_ids=tuple(args.session_ids),
+                session_ids=session_ids,
                 runtime=args.runtime,
                 model=args.model,
                 content_access=distill_content_access(args),
@@ -386,6 +404,26 @@ def distill_content_access(args: argparse.Namespace) -> ContentAccess:
     if args.allow_remote_content:
         return ContentAccess.SELECTED_REMOTE
     return ContentAccess.METADATA_ONLY
+
+
+def distill_session_ids(
+    args: argparse.Namespace,
+    app: WorkAlmanac,
+) -> tuple[str, ...]:
+    explicit = tuple(args.session_ids)
+    if args.pending and explicit:
+        raise ValueError("--pending cannot be combined with session ids")
+    if args.limit is not None and not args.pending:
+        raise ValueError("--limit requires --pending")
+    if not args.pending:
+        if not explicit:
+            raise ValueError("distill requires session ids or --pending")
+        return explicit
+    limit = 3 if args.limit is None else args.limit
+    return tuple(
+        session.session_id
+        for session in app.sessions.pending_distillation(limit)
+    )
 
 
 def sync_request(args: argparse.Namespace) -> SyncAgentRecords:
