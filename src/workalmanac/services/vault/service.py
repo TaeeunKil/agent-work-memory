@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 from workalmanac.services.sessions.models import AgentEvent, AgentSession
-from workalmanac.services.vault.snapshot import VaultSnapshot
+from workalmanac.services.vault.snapshot import VaultSnapshot, read_vault_bytes
 from workalmanac.settings import WorkAlmanacConfig, save_config
 
 VAULT_DIRECTORIES = (
@@ -151,7 +151,7 @@ class VaultService:
                 ensure_inside(vault_path, target)
                 originals[relative] = target.read_bytes() if target.is_file() else None
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(source.read_bytes())
+                target.write_bytes(read_vault_bytes(source))
         except Exception:
             restore_originals(vault_path, originals)
             raise
@@ -253,7 +253,7 @@ def allowed_distill_path(relative: Path) -> bool:
 
 
 def validate_markdown_page(path: Path) -> None:
-    raw = path.read_text(encoding="utf-8")
+    raw = read_vault_bytes(path).decode("utf-8")
     body = raw
     if raw.startswith("---\n"):
         closing = raw.find("\n---\n", 4)

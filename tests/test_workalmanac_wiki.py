@@ -114,6 +114,46 @@ def test_curator_workspace_ignores_large_session_record_layer(
     assert retained.read_bytes() == b"x" * 8192
 
 
+def test_vault_read_retries_a_transient_windows_file_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    page = tmp_path / "generated.md"
+    attempts = 0
+
+    def read_bytes(_path):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise PermissionError("temporarily locked")
+        return b"# Generated\n"
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    monkeypatch.setattr(vault_snapshot.time, "sleep", lambda _delay: None)
+
+    assert vault_snapshot.read_vault_bytes(page) == b"# Generated\n"
+    assert attempts == 3
+
+
+def test_vault_read_reports_a_locked_filename_without_a_traceback_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    page = tmp_path / "private" / "generated.md"
+    monkeypatch.setattr(
+        Path,
+        "read_bytes",
+        lambda _path: (_ for _ in ()).throw(PermissionError("locked")),
+    )
+    monkeypatch.setattr(vault_snapshot, "FILE_READ_ATTEMPTS", 2)
+    monkeypatch.setattr(vault_snapshot.time, "sleep", lambda _delay: None)
+
+    with pytest.raises(RuntimeError, match="generated.md") as raised:
+        vault_snapshot.read_vault_bytes(page)
+
+    assert str(page.parent) not in str(raised.value)
+
+
 def test_distill_prompt_supplies_navigable_session_link(tmp_path: Path):
     app = wiki_app(tmp_path)
     app.vault.initialize(tmp_path / "vault")
