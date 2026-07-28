@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 from filelock import FileLock, Timeout
@@ -35,7 +36,11 @@ class SyncAgentRecordsWorkflow:
         self.synchronization = synchronization
         self.lock_path = lock_path
 
-    def run(self, request: SyncAgentRecords) -> SyncReceipt:
+    def run(
+        self,
+        request: SyncAgentRecords,
+        progress: Callable[[str], None] | None = None,
+    ) -> SyncReceipt:
         lock = FileLock(self.lock_path, timeout=0)
         receipt = None
         try:
@@ -44,22 +49,30 @@ class SyncAgentRecordsWorkflow:
                     providers=request.providers,
                     include_content=request.include_content,
                 )
+                if progress is not None:
+                    progress("Starting local transcript collection.")
                 local_collection = self.collect.collect(
                     CollectAgentRecords(
                         providers=request.providers,
                         home=request.home,
                         include_content=request.include_content,
-                    )
+                    ),
+                    progress=progress,
                 )
+                if progress is not None:
+                    progress("Starting registered SSH remote collection.")
                 remote_collection = self.remote_sync.run(
                     SyncRemoteRecords(
                         providers=request.providers,
                         include_content=request.include_content,
-                    )
+                    ),
+                    progress=progress,
                 )
                 collection = combine_collection_receipts(
                     (local_collection, remote_collection.collection)
                 )
+                if progress is not None:
+                    progress("Refreshing search index.")
                 self.search.refresh()
         except Timeout:
             return self.synchronization.skipped_locked(
@@ -76,8 +89,15 @@ class SyncAgentRecordsWorkflow:
             raise RuntimeError(
                 "Agent Work Memory sync failed; inspect sync status"
             ) from error
-        return self.synchronization.finish(
+        completed = self.synchronization.finish(
             receipt,
             status=SyncStatus.SUCCEEDED,
             collection=collection,
         )
+        if progress is not None:
+            progress(
+                "Synchronization complete: "
+                f"{completed.sessions_discovered} session(s), "
+                f"{completed.events_added} new event(s)."
+            )
+        return completed

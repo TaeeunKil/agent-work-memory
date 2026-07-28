@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from hashlib import sha256
 
 from agentworkmemory.integrations.transcripts.models import (
@@ -27,17 +28,26 @@ class CollectAgentRecordsWorkflow:
         self.wiki = wiki
         self.collectors = {collector.provider: collector for collector in collectors}
 
-    def collect(self, request: CollectAgentRecords) -> CollectionReceipt:
+    def collect(
+        self,
+        request: CollectAgentRecords,
+        progress: Callable[[str], None] | None = None,
+    ) -> CollectionReceipt:
         discovered_count = 0
         updated_count = 0
         events_added = 0
         session_ids: list[str] = []
         for provider in request.providers:
+            if progress is not None:
+                progress(f"Scanning {provider} transcripts.")
             collector = self.collectors.get(provider)
             if collector is None:
                 raise ValueError(f"no transcript collector for {provider}")
+            provider_discovered = 0
+            provider_events = 0
             for discovered in collector.discover(request.home):
                 discovered_count += 1
+                provider_discovered += 1
                 session = self.sessions.remember_discovered(
                     provider=discovered.provider,
                     provider_session_id=discovered.provider_session_id,
@@ -71,11 +81,18 @@ class CollectAgentRecordsWorkflow:
                         ),
                     )
                     events_added += inserted
+                    provider_events += inserted
                     if inserted > 0 or not session.content_captured:
                         updated_count += 1
                 self.vault.refresh_session(
                     self.sessions.get(session.session_id),
                     self.sessions.events(session.session_id),
+                )
+            if progress is not None:
+                progress(
+                    f"{provider} transcripts complete: "
+                    f"{provider_discovered} session(s), "
+                    f"{provider_events} new event(s)."
                 )
         self.wiki.refresh()
         return CollectionReceipt(

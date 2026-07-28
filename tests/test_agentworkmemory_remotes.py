@@ -150,6 +150,25 @@ def test_remote_failure_does_not_block_local_sync(tmp_path: Path):
     assert app.remotes.list()[0].status.error_type == "unavailable"
 
 
+def test_remote_sync_reports_each_host_and_failure(tmp_path: Path):
+    app = remote_app(tmp_path, FailingRemoteAdapter())
+    app.vault.initialize(tmp_path / "vault")
+    app.remotes.register("offline-box", (AgentProvider.CODEX,))
+    progress: list[str] = []
+
+    app.sync.run(
+        SyncAgentRecords(
+            providers=(AgentProvider.CODEX,),
+            home=tmp_path / "local-home",
+            include_content=True,
+        ),
+        progress=progress.append,
+    )
+
+    assert "Scanning SSH remote 1/1: offline-box." in progress
+    assert "SSH remote offline-box unavailable: unavailable." in progress
+
+
 def test_remote_cli_add_list_status_and_remove(tmp_path: Path, capsys):
     app = remote_app(tmp_path, FakeRemoteAdapter())
 

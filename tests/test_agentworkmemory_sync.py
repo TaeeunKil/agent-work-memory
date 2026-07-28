@@ -69,6 +69,33 @@ def test_sync_is_locked_incremental_and_searchable(tmp_path: Path):
     assert any(result.kind == "session" for result in app.search.find("decision"))
 
 
+def test_sync_reports_coarse_progress(tmp_path: Path):
+    app = sync_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    write_codex_transcript(home, tmp_path / "project")
+    progress: list[str] = []
+
+    receipt = app.sync.run(
+        SyncAgentRecords(
+            providers=(AgentProvider.CODEX,),
+            home=home,
+            include_content=True,
+        ),
+        progress=progress.append,
+    )
+
+    assert receipt.status is SyncStatus.SUCCEEDED
+    assert progress == [
+        "Starting local transcript collection.",
+        "Scanning codex transcripts.",
+        "codex transcripts complete: 1 session(s), 2 new event(s).",
+        "Starting registered SSH remote collection.",
+        "Refreshing search index.",
+        "Synchronization complete: 1 session(s), 2 new event(s).",
+    ]
+
+
 def test_overlapping_sync_exits_without_collecting(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -377,7 +377,7 @@ def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
         return 0
     if args.command == "sync":
         app.vault.require_path()
-        receipt = app.sync.run(sync_request(args))
+        receipt = app.sync.run(sync_request(args), progress=print)
         print_sync_receipt(receipt)
         return 0 if receipt.status is not SyncStatus.FAILED else 1
     if args.command == "auto":
@@ -412,7 +412,8 @@ def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
                 providers=tuple(selected),
                 home=args.home.expanduser().resolve(),
                 include_content=args.include_content,
-            )
+            ),
+            progress=print,
         )
         print(
             f"Discovered {receipt.sessions_discovered} session(s); "
