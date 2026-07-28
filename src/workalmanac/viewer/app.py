@@ -128,6 +128,13 @@ def create_viewer_app(workalmanac: WorkAlmanac) -> FastAPI:
             for run in workalmanac.activity.list()
         ]
 
+    @server.get("/api/schedules")
+    def schedules() -> list[object]:
+        return [
+            schedule.model_dump(mode="json")
+            for schedule in workalmanac.viewer.schedules()
+        ]
+
     @server.get("/api/runtimes")
     def runtimes() -> list[object]:
         return [

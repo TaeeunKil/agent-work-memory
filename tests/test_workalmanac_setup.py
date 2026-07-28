@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,9 @@ class SetupScheduler:
 
     def installed(self) -> bool:
         return self.settings is not None
+
+    def next_run_at(self) -> datetime | None:
+        return None
 
     def remove(self) -> None:
         self.settings = None

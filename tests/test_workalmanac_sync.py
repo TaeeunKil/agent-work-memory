@@ -1,4 +1,6 @@
 import json
+import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -6,7 +8,10 @@ from filelock import FileLock
 
 from workalmanac.app import create_app
 from workalmanac.cli import build_parser, dispatch
-from workalmanac.integrations.automation.windows import scheduled_sync_action
+from workalmanac.integrations.automation.windows import (
+    scheduled_sync_action,
+    scheduled_task_next_run,
+)
 from workalmanac.services.automation.models import AutoSyncSettings
 from workalmanac.services.sessions.models import AgentProvider
 from workalmanac.services.synchronization.models import SyncStatus
@@ -32,6 +37,9 @@ class FakeScheduler:
 
     def installed(self) -> bool:
         return self.is_installed
+
+    def next_run_at(self) -> datetime | None:
+        return None
 
     def remove(self) -> None:
         self.removals += 1
@@ -153,6 +161,33 @@ def test_scheduled_action_uses_module_and_no_remote_distillation(tmp_path: Path)
     assert "--from claude" in action
     assert "--include-content" not in action
     assert "distill" not in action
+
+
+def test_windows_scheduler_reads_structured_next_run(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "workalmanac.integrations.automation.windows.shutil.which",
+        lambda _name: "powershell.exe",
+    )
+    monkeypatch.setattr(
+        "workalmanac.integrations.automation.windows.subprocess.run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=(),
+            returncode=0,
+            stdout='{"next_run_at":"2026-07-28T06:20:00.0000000Z"}',
+            stderr="",
+        ),
+    )
+
+    assert scheduled_task_next_run("WorkAlmanac Sync") == datetime(
+        2026,
+        7,
+        28,
+        6,
+        20,
+        tzinfo=UTC,
+    )
 
 
 def test_auto_install_cli_maps_explicit_options(tmp_path: Path, capsys):

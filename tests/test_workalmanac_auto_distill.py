@@ -41,6 +41,9 @@ class FakeAutoDistillScheduler:
     def installed(self) -> bool:
         return self.is_installed
 
+    def next_run_at(self) -> datetime | None:
+        return None
+
     def remove(self) -> None:
         self.removals += 1
         self.is_installed = False

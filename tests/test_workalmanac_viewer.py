@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -92,6 +93,46 @@ def test_viewer_search_hides_generated_and_duplicate_session_pages(tmp_path: Pat
     assert any(result["kind"] == "session" for result in results)
     assert not any(result["identity"].startswith("inbox/") for result in results)
     assert not any(result["identity"] == "Home.md" for result in results)
+
+
+def test_viewer_reports_schedules_in_next_run_order(
+    tmp_path: Path,
+    monkeypatch,
+):
+    app, _ = viewer_fixture(tmp_path)
+    sync_at = datetime(2026, 7, 28, 7, 30, tzinfo=UTC)
+    distill_at = datetime(2026, 7, 28, 7, 10, tzinfo=UTC)
+    monkeypatch.setattr(app.automation.adapter, "available", lambda: True)
+    monkeypatch.setattr(app.automation.adapter, "installed", lambda: True)
+    monkeypatch.setattr(
+        app.automation.adapter,
+        "next_run_at",
+        lambda: sync_at,
+    )
+    monkeypatch.setattr(
+        app.auto_distillation.adapter,
+        "available",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        app.auto_distillation.adapter,
+        "installed",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        app.auto_distillation.adapter,
+        "next_run_at",
+        lambda: distill_at,
+    )
+    client = TestClient(create_viewer_app(app))
+
+    schedules = client.get("/api/schedules").json()
+
+    assert [schedule["task"] for schedule in schedules] == [
+        "auto-distill",
+        "sync",
+    ]
+    assert schedules[0]["next_run_at"] == "2026-07-28T07:10:00Z"
 
 
 def test_viewer_mutations_require_header_and_record_receipts(tmp_path: Path):

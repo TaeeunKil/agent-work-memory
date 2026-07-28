@@ -1,9 +1,13 @@
 import re
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
 from markdown_it import MarkdownIt
 
+from workalmanac.services.activity.models import ActivityTask
+from workalmanac.services.auto_distillation.service import AutoDistillationService
+from workalmanac.services.automation.service import AutomationService
 from workalmanac.services.sessions.models import AgentSession
 from workalmanac.services.sessions.service import SessionsService
 from workalmanac.services.synchronization.service import SynchronizationService
@@ -13,6 +17,7 @@ from workalmanac.services.viewer.models import (
     ViewerOverview,
     ViewerPage,
     ViewerPageDetail,
+    ViewerSchedule,
     ViewerSession,
     ViewerSessionDetail,
 )
@@ -36,11 +41,15 @@ class ViewerService:
         vault: VaultService,
         wiki: WikiCatalogService,
         synchronization: SynchronizationService,
+        automation: AutomationService,
+        auto_distillation: AutoDistillationService,
     ):
         self.sessions_service = sessions
         self.vault = vault
         self.wiki = wiki
         self.synchronization = synchronization
+        self.automation = automation
+        self.auto_distillation = auto_distillation
 
     def overview(self) -> ViewerOverview:
         sessions = self.sessions_service.list()
@@ -61,6 +70,28 @@ class ViewerService:
         return tuple(
             self.session_summary(session)
             for session in self.sessions_service.list()[:limit]
+        )
+
+    def schedules(self) -> tuple[ViewerSchedule, ...]:
+        sync = self.automation.status()
+        distill = self.auto_distillation.status()
+        schedules = (
+            viewer_schedule(
+                ActivityTask.SYNC,
+                sync.task_name,
+                sync.next_run_at,
+            ),
+            viewer_schedule(
+                ActivityTask.AUTO_DISTILL,
+                distill.task_name,
+                distill.next_run_at,
+            ),
+        )
+        return tuple(
+            sorted(
+                (schedule for schedule in schedules if schedule is not None),
+                key=lambda schedule: schedule.next_run_at,
+            )
         )
 
     def session(self, session_id: str) -> ViewerSessionDetail:
@@ -193,3 +224,17 @@ def page_category(path: Path) -> str:
     if len(path.parts) >= 2:
         return path.parts[0]
     return "home"
+
+
+def viewer_schedule(
+    task: ActivityTask,
+    task_name: str,
+    next_run_at: datetime | None,
+) -> ViewerSchedule | None:
+    if next_run_at is None:
+        return None
+    return ViewerSchedule(
+        task=task,
+        task_name=task_name,
+        next_run_at=next_run_at,
+    )

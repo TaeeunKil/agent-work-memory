@@ -138,7 +138,6 @@ def create_app(
         SynchronizationStore(resolved.database_path)
     )
     activity = ActivityService(resolved.state_dir / "activity")
-    viewer = ViewerService(sessions, vault, wiki, synchronization)
     sync = SyncAgentRecordsWorkflow(
         collect,
         remote_sync,
@@ -156,6 +155,14 @@ def create_app(
         or default_auto_distill_scheduler_adapter(),
         AutoDistillStore(resolved.state_dir / "auto-distill.json"),
         resolved.state_dir,
+    )
+    viewer = ViewerService(
+        sessions,
+        vault,
+        wiki,
+        synchronization,
+        automation,
+        auto_distillation,
     )
     setup = SetupWorkAlmanacWorkflow(vault, wiki, sync, automation)
     adapters = (

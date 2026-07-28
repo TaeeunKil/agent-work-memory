@@ -603,6 +603,15 @@ body.has-inspector .inspector {
   margin: 0;
 }
 
+.activity-next p:last-child {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.activity-next strong {
+  font-weight: 700;
+}
+
 .activity-list {
   border-top: 1px solid var(--ink);
 }

@@ -1,6 +1,8 @@
+import json
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from workalmanac.services.automation.models import AutoSyncSettings
@@ -35,6 +37,9 @@ class WindowsSchedulerAdapter:
     def installed(self) -> bool:
         completed = run_schtasks(("/Query", "/TN", self.task_name))
         return completed.returncode == 0
+
+    def next_run_at(self) -> datetime | None:
+        return scheduled_task_next_run(self.task_name)
 
     def remove(self) -> None:
         completed = run_schtasks(("/Delete", "/F", "/TN", self.task_name))
@@ -73,3 +78,46 @@ def run_schtasks(arguments: tuple[str, ...]) -> subprocess.CompletedProcess[str]
         check=False,
         creationflags=creationflags,
     )
+
+
+def scheduled_task_next_run(task_name: str) -> datetime | None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        return None
+    escaped_name = task_name.replace("'", "''")
+    command = (
+        "$ErrorActionPreference='Stop';"
+        "try{"
+        f"$next=(Get-ScheduledTaskInfo -TaskName '{escaped_name}').NextRunTime"
+        "}catch{"
+        f"$csv=& schtasks.exe /Query /TN '{escaped_name}' /FO CSV /V;"
+        "if($LASTEXITCODE -ne 0){exit 1};"
+        "$row=@($csv|ConvertFrom-Csv)[0];"
+        "$next=[datetime]::Parse($row.PSObject.Properties[2].Value)"
+        "};"
+        "$value=$next.ToUniversalTime().ToString('o');"
+        "[pscustomobject]@{next_run_at=$value}|ConvertTo-Json -Compress"
+    )
+    creationflags = 0x08000000 if sys.platform == "win32" else 0
+    try:
+        completed = subprocess.run(
+            (powershell, "-NoProfile", "-NonInteractive", "-Command", command),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=10,
+            creationflags=creationflags,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    try:
+        payload = json.loads(completed.stdout)
+        value = payload["next_run_at"]
+        parsed = datetime.fromisoformat(value)
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return parsed if parsed.tzinfo is not None else None

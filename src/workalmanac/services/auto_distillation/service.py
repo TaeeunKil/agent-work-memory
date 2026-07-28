@@ -91,6 +91,7 @@ class AutoDistillationService:
             task_name=self.adapter.task_name,
             message=message,
             settings=self.store.load(),
+            next_run_at=self.adapter.next_run_at() if installed else None,
         )
 
     def remove(self) -> None:

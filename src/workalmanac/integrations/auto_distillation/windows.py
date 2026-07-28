@@ -1,10 +1,12 @@
 import shutil
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 from workalmanac.integrations.automation.windows import (
     background_python_executable,
     run_schtasks,
+    scheduled_task_next_run,
 )
 from workalmanac.services.auto_distillation.models import AutoDistillSettings
 
@@ -40,6 +42,9 @@ class WindowsAutoDistillSchedulerAdapter:
     def installed(self) -> bool:
         completed = run_schtasks(("/Query", "/TN", self.task_name))
         return completed.returncode == 0
+
+    def next_run_at(self) -> datetime | None:
+        return scheduled_task_next_run(self.task_name)
 
     def remove(self) -> None:
         completed = run_schtasks(("/Delete", "/F", "/TN", self.task_name))

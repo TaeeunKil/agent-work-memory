@@ -32,3 +32,4 @@ class SchedulerStatus(WorkAlmanacModel):
     task_name: str
     message: str
     settings: AutoSyncSettings | None = None
+    next_run_at: datetime | None = None
