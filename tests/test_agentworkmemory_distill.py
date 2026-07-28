@@ -372,10 +372,17 @@ def test_yoke_curator_is_wiki_write_only_and_offline(tmp_path: Path):
     assert options.provider.codex.approval == "never"
 
 
-def test_windows_yoke_curator_uses_standalone_codex_cli(tmp_path: Path):
+def test_windows_yoke_curator_uses_standalone_codex_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
     vault = tmp_path / "vault"
     vault.mkdir()
     adapter = YokeCuratorAdapter("codex", tmp_path / "state/curators/codex")
+    monkeypatch.setattr(
+        "agentworkmemory.integrations.curators.yoke.sys.platform",
+        "win32",
+    )
 
     assert curator_surface("codex", "win32") == "codex_cli"
     assert curator_surface("codex", "linux") == "codex_app_server"
