@@ -5,6 +5,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from agentworkmemory.integrations.processes import hidden_process_creation_flags
 from agentworkmemory.services.automation.models import AutoSyncSettings
 
 TASK_NAME = "AWM Sync"
@@ -70,13 +71,12 @@ def background_python_executable() -> str:
 
 
 def run_schtasks(arguments: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
-    creationflags = 0x08000000 if sys.platform == "win32" else 0
     return subprocess.run(
         ("schtasks.exe", *arguments),
         capture_output=True,
         text=True,
         check=False,
-        creationflags=creationflags,
+        creationflags=hidden_process_creation_flags(),
     )
 
 
@@ -98,7 +98,6 @@ def scheduled_task_next_run(task_name: str) -> datetime | None:
         "$value=$next.ToUniversalTime().ToString('o');"
         "[pscustomobject]@{next_run_at=$value}|ConvertTo-Json -Compress"
     )
-    creationflags = 0x08000000 if sys.platform == "win32" else 0
     try:
         completed = subprocess.run(
             (powershell, "-NoProfile", "-NonInteractive", "-Command", command),
@@ -108,7 +107,7 @@ def scheduled_task_next_run(task_name: str) -> datetime | None:
             errors="replace",
             check=False,
             timeout=10,
-            creationflags=creationflags,
+            creationflags=hidden_process_creation_flags(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return None

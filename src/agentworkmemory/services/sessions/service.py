@@ -3,6 +3,10 @@ from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 
+from agentworkmemory.services.sessions.distillation import (
+    is_distillation_candidate,
+    same_workspace,
+)
 from agentworkmemory.services.sessions.models import (
     AgentEvent,
     AgentEventKind,
@@ -156,11 +160,23 @@ class SessionsService:
     def pending_distillation(self, limit: int) -> tuple[AgentSession, ...]:
         if not 1 <= limit <= 20:
             raise ValueError("pending distill limit must be between 1 and 20")
+        pending = self.distillation_candidates()
+        if not pending:
+            return ()
+        anchor = pending[0]
+        return tuple(
+            session
+            for session in pending
+            if same_workspace(anchor, session)
+        )[:limit]
+
+    def distillation_candidates(self) -> tuple[AgentSession, ...]:
+        state_root = self.store.database_path.parent
         return tuple(
             session
             for session in self.list()
-            if session.content_captured and session.distilled_at is None
-        )[:limit]
+            if is_distillation_candidate(session, state_root)
+        )
 
     def events(self, session_id: str) -> tuple[AgentEvent, ...]:
         return self.store.events_for(session_id)
@@ -182,6 +198,11 @@ class SessionsService:
             runtime=runtime,
             distilled_at=distilled_at,
         )
+
+    def requeue_distillation(self, session_ids: tuple[str, ...]) -> None:
+        for session_id in session_ids:
+            self.get(session_id)
+        self.store.requeue_distillation(session_ids)
 
 
 def stable_session_id(

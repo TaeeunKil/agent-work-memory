@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 from typing import Protocol
 
+from agentworkmemory.integrations.processes import hidden_process_creation_flags
 from agentworkmemory.services.remotes.errors import (
     RemoteAccessError,
     RemoteAccessErrorKind,
@@ -88,6 +89,7 @@ class OpenSshRunner:
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
+                creationflags=hidden_process_creation_flags(),
             )
         except OSError as error:
             raise RemoteAccessError(
@@ -162,6 +164,7 @@ class OpenSshRunner:
                 stderr=subprocess.PIPE,
                 check=True,
                 timeout=timeout_seconds,
+                creationflags=hidden_process_creation_flags(),
             )
         except subprocess.TimeoutExpired as error:
             raise RemoteAccessError(

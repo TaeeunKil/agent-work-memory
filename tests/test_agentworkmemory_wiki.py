@@ -5,10 +5,14 @@ import pytest
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import main
 from agentworkmemory.services.curators.models import ContentAccess
+from agentworkmemory.services.sessions.models import AgentEventKind
 from agentworkmemory.services.vault import service as vault_service
 from agentworkmemory.services.vault import snapshot as vault_snapshot
 from agentworkmemory.settings import AgentWorkMemoryConfig
-from agentworkmemory.workflows.distill.prompt import distill_prompt
+from agentworkmemory.workflows.distill.prompt import (
+    distill_prompt,
+    select_evidence,
+)
 
 
 def test_init_builds_obsidian_home_and_category_indexes(
@@ -224,6 +228,45 @@ def test_distill_prompt_supplies_navigable_session_link(tmp_path: Path):
     assert "Preserve existing sources and append each supporting session once" in prompt
     assert f"- Workspace: {session.cwd or 'unknown'}" in prompt
     assert "Never edit README.md, Home.md, _index.md" in prompt
+
+
+def test_distill_evidence_keeps_opening_intent_and_recent_outcome(
+    tmp_path: Path,
+):
+    app = wiki_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    session = app.sessions.add_manual_note("Opening intent.")
+    base = app.sessions.events(session.session_id)[0]
+    events = (
+        base.model_copy(
+            update={
+                "sequence": 1,
+                "role": "user",
+                "content": "Opening intent.",
+            }
+        ),
+        base.model_copy(
+            update={
+                "sequence": 2,
+                "kind": AgentEventKind.TOOL_RESULT,
+                "role": None,
+                "content": "oversized tool noise" * 10_000,
+            }
+        ),
+        base.model_copy(
+            update={
+                "sequence": 3,
+                "role": "assistant",
+                "content": "Final durable outcome.",
+            }
+        ),
+    )
+
+    excerpts = select_evidence(events, 5_000)
+
+    assert [item.event.sequence for item in excerpts] == [1, 3]
+    assert excerpts[0].content == "Opening intent."
+    assert excerpts[-1].content == "Final durable outcome."
 
 
 def test_catalog_skips_invalid_manual_markdown_without_breaking_sync(

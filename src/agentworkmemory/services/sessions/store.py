@@ -171,6 +171,21 @@ class SessionsStore:
             )
             connection.commit()
 
+    def requeue_distillation(self, session_ids: tuple[str, ...]) -> None:
+        with open_database(self.database_path) as connection:
+            connection.executemany(
+                """
+                UPDATE agent_sessions
+                SET distilled_at = NULL, distill_runtime = NULL, updated_at = ?
+                WHERE session_id = ?
+                """,
+                tuple(
+                    (datetime.now(UTC).isoformat(), session_id)
+                    for session_id in session_ids
+                ),
+            )
+            connection.commit()
+
 
 def session_values(session: AgentSession) -> tuple[object, ...]:
     return (

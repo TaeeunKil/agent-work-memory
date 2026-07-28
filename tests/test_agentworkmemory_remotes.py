@@ -1,4 +1,5 @@
 import json
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -6,6 +7,8 @@ import pytest
 
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import build_parser, dispatch
+from agentworkmemory.integrations.processes import WINDOWS_CREATE_NO_WINDOW
+from agentworkmemory.integrations.remotes.process import OpenSshRunner
 from agentworkmemory.integrations.remotes.ssh import SshRemoteSnapshotAdapter
 from agentworkmemory.services.remotes import (
     RemoteAccessError,
@@ -208,6 +211,31 @@ def test_ssh_snapshot_is_incremental_and_rejects_unsafe_archive(tmp_path: Path):
     with pytest.raises(RemoteAccessError, match="unsafe"):
         unsafe.snapshot(host, RemoteManifest(), tmp_path / "unsafe")
     assert not (tmp_path / "escape.jsonl").exists()
+
+
+def test_windows_ssh_capture_process_is_hidden(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, stdout=b"ok", stderr=b"")
+
+    monkeypatch.setattr(
+        "agentworkmemory.integrations.remotes.process.subprocess.run",
+        fake_run,
+    )
+
+    output = OpenSshRunner("ssh.exe").capture(
+        "agent-box",
+        "printf ok",
+        timeout_seconds=10,
+    )
+
+    assert output == b"ok"
+    assert captured["creationflags"] == WINDOWS_CREATE_NO_WINDOW
 
 
 def test_doctor_explains_that_captured_sessions_need_distillation(
