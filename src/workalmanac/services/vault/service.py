@@ -1,4 +1,6 @@
+import os
 import shutil
+import subprocess
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -118,6 +120,9 @@ class VaultService:
             )
             yield workspace, VaultSnapshot.capture(workspace), original
 
+    def normalize_curator_workspace_permissions(self, workspace: Path) -> None:
+        normalize_workspace_permissions(workspace)
+
     def validate_distill_changes(
         self,
         snapshot: VaultSnapshot,
@@ -155,6 +160,20 @@ class VaultService:
         except Exception:
             restore_originals(vault_path, originals)
             raise
+
+
+def normalize_workspace_permissions(root: Path) -> None:
+    """Remove Codex sandbox ACLs from a disposable Windows curator workspace."""
+    if os.name != "nt":
+        return
+    subprocess.run(
+        ("icacls", str(root), "/reset", "/T", "/C", "/Q"),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
 
 
 def render_session_page(
