@@ -12,7 +12,8 @@ cleanup explicitly:
 
 1. restore the parent account's ACL across the complete temporary tree;
 2. remove the tree;
-3. retry short-lived `PermissionError` failures for a bounded interval.
+3. retry short-lived access-denied and sharing-violation failures (`WinError`
+   5 and 32) for a bounded interval.
 
 ## Invariants
 
