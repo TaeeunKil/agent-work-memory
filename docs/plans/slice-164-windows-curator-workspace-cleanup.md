@@ -22,6 +22,16 @@ while reading its structured handoff. Each retry repairs the Vault ACL again
 before reading, covering sandbox helper handles that briefly outlive the main
 Codex process.
 
+Bounded failure messages include only a lifecycle stage name and exception
+class, preserving path redaction while making provider, handoff-read, and
+handoff-apply failures distinguishable.
+
+The hidden Windows Codex CLI bridge runs its buffered child process in a worker
+thread and parses the completed JSONL output afterward. The curator UI does not
+stream provider output, so avoiding Windows asyncio subprocess transports
+removes Proactor `Event loop is closed` and closed-pipe `ValueError` failures
+without changing visible behavior.
+
 ## Invariants
 
 - Cleanup runs after every successful or failed curator attempt.
