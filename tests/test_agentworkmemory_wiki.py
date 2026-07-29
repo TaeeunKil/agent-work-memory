@@ -206,6 +206,35 @@ def test_windows_curator_workspace_acl_is_repaired_without_a_console(
         assert kwargs["creationflags"] == 0x08000000
 
 
+def test_curator_workspace_cleanup_repairs_permissions_and_retries_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    workspace = tmp_path / "distill-test"
+    workspace.mkdir()
+    repair_calls = []
+    remove_attempts = 0
+
+    def repair(path: Path) -> None:
+        repair_calls.append(path)
+
+    def remove(path: Path) -> None:
+        nonlocal remove_attempts
+        remove_attempts += 1
+        if remove_attempts == 1:
+            raise PermissionError("directory is still releasing")
+        path.rmdir()
+
+    monkeypatch.setattr(vault_service, "normalize_workspace_permissions", repair)
+    monkeypatch.setattr(vault_service.shutil, "rmtree", remove)
+    monkeypatch.setattr(vault_service.time, "sleep", lambda _delay: None)
+
+    vault_service.remove_curator_workspace(workspace)
+
+    assert repair_calls == [workspace, workspace]
+    assert remove_attempts == 2
+
+
 def test_distill_prompt_supplies_navigable_session_link(tmp_path: Path):
     app = wiki_app(tmp_path)
     app.vault.initialize(tmp_path / "vault")
