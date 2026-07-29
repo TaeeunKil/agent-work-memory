@@ -529,6 +529,76 @@ def test_windows_yoke_curator_applies_json_handoff(
     assert not (vault / ".awm-curator-output.json").exists()
 
 
+def test_windows_yoke_repairs_handoff_permissions_before_reading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    repair_calls = []
+
+    def repair_workspace(path: Path) -> None:
+        repair_calls.append(path)
+        (path / ".awm-curator-output.json").write_text(
+            json.dumps(
+                {
+                    "files": [
+                        {
+                            "path": "systems/repaired-handoff.md",
+                            "content": "# Repaired handoff\n",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    adapter = YokeCuratorAdapter(
+        "codex",
+        tmp_path / "state/curators/codex",
+        workspace_permission_repair=repair_workspace,
+    )
+
+    class SandboxOwnedHandoffHarness:
+        def run_sync(self, prompt, options):
+            (vault / ".awm-curator-output.json").write_text(
+                "sandbox-owned",
+                encoding="utf-8",
+            )
+            return SimpleNamespace(
+                status="succeeded",
+                output="wrote one page",
+                failure=None,
+                provider_session_id="codex-repaired-handoff",
+            )
+
+    monkeypatch.setattr(
+        "agentworkmemory.integrations.curators.yoke.sys",
+        SimpleNamespace(platform="win32"),
+    )
+    monkeypatch.setattr(
+        adapter,
+        "harness",
+        lambda _cwd: SandboxOwnedHandoffHarness(),
+    )
+
+    result = adapter.run(
+        CuratorRunRequest(
+            runtime="codex",
+            vault_path=vault,
+            prompt="Maintain durable Wiki knowledge.",
+            content_access=ContentAccess.SELECTED_REMOTE,
+        )
+    )
+
+    assert result.status is CuratorRunStatus.SUCCEEDED
+    assert repair_calls == [vault]
+    assert (vault / "systems/repaired-handoff.md").read_text(
+        encoding="utf-8"
+    ) == "# Repaired handoff\n"
+    assert not (vault / ".awm-curator-output.json").exists()
+
+
 @pytest.mark.parametrize(
     "path",
     ("../escape.md", "C:/absolute.md"),
