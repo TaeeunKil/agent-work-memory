@@ -13,13 +13,16 @@ cleanup explicitly:
 1. restore the parent account's ACL across the complete temporary tree;
 2. remove the tree;
 3. retry short-lived access-denied and sharing-violation failures (`WinError`
-   5 and 32) for a bounded interval.
+   5 and 32) for a bounded interval;
+4. defer a still-locked disposable directory instead of replacing the
+   curator's durable result or original error with a cleanup error.
 
 ## Invariants
 
 - Cleanup runs after every successful or failed curator attempt.
 - A transient directory lock is retried without opening a console window.
-- Persistent cleanup failures remain visible instead of being silently ignored.
+- A persistent Windows sharing lock can leave a disposable directory for a
+  later cleanup pass, but cannot turn a curator result into a failed receipt.
 - Non-Windows cleanup keeps the same direct `rmtree` behavior.
 
 ## Verification
