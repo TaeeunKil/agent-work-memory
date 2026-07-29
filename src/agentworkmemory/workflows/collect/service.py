@@ -63,6 +63,7 @@ class CollectAgentRecordsWorkflow:
                     source_path=discovered.source_path,
                     modified_at=discovered.modified_at,
                     started_at=discovered.started_at,
+                    title=discovered.title,
                 )
                 session_ids.append(session.session_id)
                 if request.include_content:

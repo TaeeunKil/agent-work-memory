@@ -17,6 +17,19 @@ class AgentProvider:
     MANUAL = "manual"
     CODEX = "codex"
     CLAUDE = "claude"
+    CURSOR = "cursor"
+
+
+LOCAL_TRANSCRIPT_PROVIDERS = (
+    AgentProvider.CODEX,
+    AgentProvider.CLAUDE,
+    AgentProvider.CURSOR,
+)
+
+SSH_REMOTE_TRANSCRIPT_PROVIDERS = (
+    AgentProvider.CODEX,
+    AgentProvider.CLAUDE,
+)
 
 
 class SessionState(StrEnum):

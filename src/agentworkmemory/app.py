@@ -13,6 +13,7 @@ from agentworkmemory.integrations.remotes import SshRemoteSnapshotAdapter
 from agentworkmemory.integrations.transcripts import (
     ClaudeTranscriptCollector,
     CodexTranscriptCollector,
+    CursorTranscriptCollector,
 )
 from agentworkmemory.services.activity import ActivityService
 from agentworkmemory.services.auto_distillation.ports import (
@@ -127,6 +128,7 @@ def create_app(
     collectors = (
         CodexTranscriptCollector(),
         ClaudeTranscriptCollector(),
+        CursorTranscriptCollector(),
     )
     collect = CollectAgentRecordsWorkflow(sessions, vault, wiki, collectors)
     remotes = RemotesService(

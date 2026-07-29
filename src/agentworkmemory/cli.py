@@ -17,7 +17,10 @@ from agentworkmemory.services.diagnostics.models import DiagnosticStatus
 from agentworkmemory.services.distillation.outcomes import (
     summarize_session_outcomes,
 )
-from agentworkmemory.services.sessions.models import AgentProvider
+from agentworkmemory.services.sessions.models import (
+    LOCAL_TRANSCRIPT_PROVIDERS,
+    SSH_REMOTE_TRANSCRIPT_PROVIDERS,
+)
 from agentworkmemory.services.synchronization.models import SyncReceipt, SyncStatus
 from agentworkmemory.settings import load_config
 from agentworkmemory.workflows.auto_distill import AutoDistillRunState
@@ -70,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--from",
         dest="providers",
         action="append",
-        choices=(AgentProvider.CODEX, AgentProvider.CLAUDE),
+        choices=LOCAL_TRANSCRIPT_PROVIDERS,
         help="Agent provider to collect. Repeat to select more than one.",
     )
     collect.add_argument(
@@ -184,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Register an SSH config alias or user@host.",
     )
     remote_add.add_argument("target")
-    add_provider_options(remote_add)
+    add_remote_provider_options(remote_add)
     remote_commands.add_parser("list", help="List registered SSH remotes.")
     remote_status = remote_commands.add_parser(
         "status",
@@ -196,7 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fetch changed transcripts from registered SSH remotes.",
     )
     remote_sync.add_argument("target", nargs="?")
-    add_provider_options(remote_sync)
+    add_remote_provider_options(remote_sync)
     remote_sync.add_argument(
         "--include-content",
         action="store_true",
@@ -300,7 +303,7 @@ def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
                 vault_path=args.path,
                 home=args.home.expanduser().resolve(),
                 providers=tuple(
-                    args.providers or (AgentProvider.CODEX, AgentProvider.CLAUDE)
+                    args.providers or LOCAL_TRANSCRIPT_PROVIDERS
                 ),
                 include_content=args.include_content,
                 auto_interval_minutes=args.every if args.auto else None,
@@ -407,8 +410,7 @@ def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
     if args.command == "collect":
         app.vault.require_path()
         selected = args.providers or [
-            AgentProvider.CODEX,
-            AgentProvider.CLAUDE,
+            *LOCAL_TRANSCRIPT_PROVIDERS,
         ]
         receipt = app.collect.collect(
             CollectAgentRecords(
@@ -473,8 +475,18 @@ def add_provider_options(parser: argparse.ArgumentParser) -> None:
         "--from",
         dest="providers",
         action="append",
-        choices=(AgentProvider.CODEX, AgentProvider.CLAUDE),
+        choices=LOCAL_TRANSCRIPT_PROVIDERS,
         help="Agent provider to collect. Repeat to select more than one.",
+    )
+
+
+def add_remote_provider_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--from",
+        dest="providers",
+        action="append",
+        choices=SSH_REMOTE_TRANSCRIPT_PROVIDERS,
+        help="Remote agent provider to collect. Repeat to select more than one.",
     )
 
 
@@ -508,7 +520,7 @@ def distill_session_ids(
 
 def sync_request(args: argparse.Namespace) -> SyncAgentRecords:
     return SyncAgentRecords(
-        providers=tuple(args.providers or (AgentProvider.CODEX, AgentProvider.CLAUDE)),
+        providers=tuple(args.providers or LOCAL_TRANSCRIPT_PROVIDERS),
         home=args.home.expanduser().resolve(),
         include_content=args.include_content,
     )
@@ -520,7 +532,7 @@ def dispatch_auto(args: argparse.Namespace, app: AgentWorkMemory) -> int:
         settings = AutoSyncSettings(
             interval_minutes=args.every,
             providers=tuple(
-                args.providers or (AgentProvider.CODEX, AgentProvider.CLAUDE)
+                args.providers or LOCAL_TRANSCRIPT_PROVIDERS
             ),
             home=args.home.expanduser().resolve(),
             include_content=args.include_content,
@@ -726,7 +738,7 @@ def dispatch_remote(args: argparse.Namespace, app: AgentWorkMemory) -> int:
         host = app.remotes.register(
             args.target,
             tuple(
-                args.providers or (AgentProvider.CODEX, AgentProvider.CLAUDE)
+                args.providers or SSH_REMOTE_TRANSCRIPT_PROVIDERS
             ),
         )
         providers = ", ".join(host.providers)

@@ -1,7 +1,7 @@
 # Agent Work Memory User Guide
 
 Agent Work Memory is a private local Wiki for work performed with Codex Desktop,
-Claude, local LLMs, and provider-neutral imported agent records.
+Claude, Cursor, local LLMs, and provider-neutral imported agent records.
 
 The durable Wiki is ordinary Markdown. Open it with Obsidian, browse it with the
 local Agent Work Memory viewer, version it with Git, or back it up like any other
@@ -9,10 +9,10 @@ folder.
 
 ## Install from this checkout
 
-Install `uv`, then run this repository's Agent Work Memory branch:
+Install `uv`, then run this repository's main branch:
 
 ```powershell
-git switch codex/agent-work-memory
+git switch main
 uv tool install --editable . --force
 awm --help
 ```
@@ -29,7 +29,7 @@ Choose one private Vault directory:
 awm setup C:\Users\user\Documents\AgentWorkMemoryVault
 ```
 
-That initializes the Vault and discovers Codex and Claude sessions using
+That initializes the Vault and discovers Codex, Claude, and Cursor sessions using
 metadata only.
 
 To retain transcript bodies locally and install five-minute automatic sync:
@@ -59,7 +59,7 @@ Automatic sync is enough for routine retention. Manual commands remain
 available:
 
 ```powershell
-awm sync --from codex --from claude --include-content
+awm sync --from codex --from claude --from cursor --include-content
 awm search "why we chose sqlite"
 awm sessions
 awm show ses_...
@@ -74,6 +74,19 @@ awm serve
 The viewer binds only to `127.0.0.1`. It shows retained sessions, durable Wiki
 pages, source links, backlinks, search results, and body-free operation
 receipts.
+
+### What Cursor collection includes
+
+The `cursor` provider reads native Cursor Composer conversations from Cursor's
+local SQLite store. Workspace identifiers are retained for local folders, WSL,
+and Cursor Remote SSH sessions.
+
+Codex used inside Cursor through the OpenAI Codex extension uses Codex's
+standard `.codex` store, so those sessions are already collected by the
+`codex` provider. A Claude extension or terminal session that writes Claude's
+standard `.claude` store is collected by the `claude` provider. AWM keeps these
+native records under their native provider rather than duplicating them as
+Cursor Composer sessions.
 
 ## Open in Obsidian
 
@@ -278,14 +291,14 @@ awm auto status
 Run one safe incremental retry:
 
 ```powershell
-awm sync --from codex --from claude --include-content
+awm sync --from codex --from claude --from cursor --include-content
 ```
 
 Reinstall automatic sync:
 
 ```powershell
 awm auto remove
-awm auto install --every 5 --from codex --from claude --include-content
+awm auto install --every 5 --from codex --from claude --from cursor --include-content
 ```
 
 The Markdown Vault remains the durable source of truth. Search indexes,
