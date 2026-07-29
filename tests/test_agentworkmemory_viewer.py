@@ -391,14 +391,21 @@ def test_viewer_live_activity_log_preserves_end_aware_scrolling(tmp_path: Path):
     client = TestClient(create_viewer_app(app))
 
     javascript = client.get("/assets/app.js")
+    stylesheet = client.get("/assets/app.css")
 
     assert javascript.status_code == 200
+    assert stylesheet.status_code == 200
     assert "data-live-log" in javascript.text
+    assert 'tabindex="0" aria-label="Recent activity log"' in javascript.text
     assert "captureEndAwareScroll(activityInspector)" in javascript.text
     assert "restoreEndAwareScroll(activityInspector, inspectorScroll)" in (
         javascript.text
     )
     assert "distanceFromEnd <= 24" in javascript.text
+    assert "scrollbar-width: thin" in stylesheet.text
+    assert "scrollbar-color: transparent transparent" in stylesheet.text
+    assert ".activity-log pre:focus::-webkit-scrollbar-thumb" in stylesheet.text
+    assert "background-color: rgba(242, 239, 231, .58)" in stylesheet.text
 
 
 def test_serve_cli_uses_loopback_viewer_runner(tmp_path: Path, monkeypatch):
