@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from agentworkmemory.agents import distill_instructions
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import main
 from agentworkmemory.integrations.curators import yoke as yoke_curator
@@ -75,6 +76,16 @@ class FakeCuratorAdapter:
             output_text="updated durable knowledge",
             provider_session_id="curator-session-1",
         )
+
+
+def test_curator_instructions_omit_secret_values_from_durable_wiki():
+    instructions = " ".join(distill_instructions().split())
+
+    assert "Never persist passwords" in instructions
+    assert "access tokens" in instructions
+    assert "private keys" in instructions
+    assert "raw authentication headers" in instructions
+    assert "omit the value" in instructions
 
 
 def test_distill_promotes_session_into_durable_wiki(tmp_path: Path):
