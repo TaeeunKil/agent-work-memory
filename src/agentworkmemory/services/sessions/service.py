@@ -172,10 +172,14 @@ class SessionsService:
 
     def distillation_candidates(self) -> tuple[AgentSession, ...]:
         state_root = self.store.database_path.parent
+        session_ids_with_events = self.store.session_ids_with_events()
         return tuple(
             session
             for session in self.list()
-            if is_distillation_candidate(session, state_root)
+            if (
+                session.session_id in session_ids_with_events
+                and is_distillation_candidate(session, state_root)
+            )
         )
 
     def events(self, session_id: str) -> tuple[AgentEvent, ...]:

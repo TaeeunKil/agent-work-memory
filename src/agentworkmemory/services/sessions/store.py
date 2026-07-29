@@ -116,6 +116,21 @@ class SessionsStore:
             ).fetchall()
         return tuple(session_from_row(row) for row in rows)
 
+    def session_ids_with_events(self) -> frozenset[str]:
+        with open_database(self.database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT session_id
+                FROM agent_sessions
+                WHERE EXISTS (
+                  SELECT 1
+                  FROM agent_events
+                  WHERE agent_events.session_id = agent_sessions.session_id
+                )
+                """
+            ).fetchall()
+        return frozenset(row["session_id"] for row in rows)
+
     def events_for(self, session_id: str) -> tuple[AgentEvent, ...]:
         with open_database(self.database_path) as connection:
             rows = connection.execute(
