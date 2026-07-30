@@ -93,6 +93,28 @@ def test_collects_codex_and_claude_without_repository_registration(tmp_path: Pat
     assert "Claude remembers the outcome" in rendered
 
 
+def test_collection_skips_awm_internal_workspaces(tmp_path: Path):
+    app = isolated_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    write_codex_transcript(
+        home,
+        tmp_path / "state" / "distill-workspaces" / "distill-test" / "vault",
+    )
+
+    receipt = app.collect.collect(
+        CollectAgentRecords(
+            providers=(AgentProvider.CODEX,),
+            home=home,
+            include_content=True,
+        )
+    )
+
+    assert receipt.sessions_discovered == 0
+    assert receipt.session_ids == ()
+    assert app.sessions.list() == ()
+
+
 def test_metadata_collection_can_later_import_content(tmp_path: Path):
     app = isolated_app(tmp_path)
     vault = app.vault.initialize(tmp_path / "vault")

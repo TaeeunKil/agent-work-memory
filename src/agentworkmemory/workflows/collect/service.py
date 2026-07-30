@@ -5,6 +5,7 @@ from agentworkmemory.integrations.transcripts.models import (
     DiscoveredAgentSession,
     TranscriptCollector,
 )
+from agentworkmemory.services.sessions.distillation import is_internal_workspace
 from agentworkmemory.services.sessions.models import CollectorCursor
 from agentworkmemory.services.sessions.service import SessionsService
 from agentworkmemory.services.vault.service import VaultService
@@ -45,7 +46,14 @@ class CollectAgentRecordsWorkflow:
                 raise ValueError(f"no transcript collector for {provider}")
             provider_discovered = 0
             provider_events = 0
+            provider_internal = 0
             for discovered in collector.discover(request.home):
+                if is_internal_workspace(
+                    discovered.cwd,
+                    self.vault.config.state_dir,
+                ):
+                    provider_internal += 1
+                    continue
                 discovered_count += 1
                 provider_discovered += 1
                 session = self.sessions.remember_discovered(
@@ -89,10 +97,16 @@ class CollectAgentRecordsWorkflow:
                     self.sessions.events(session.session_id),
                 )
             if progress is not None:
+                internal_summary = (
+                    f", {provider_internal} internal session(s) excluded"
+                    if provider_internal
+                    else ""
+                )
                 progress(
                     f"{provider} transcripts complete: "
                     f"{provider_discovered} session(s), "
-                    f"{provider_events} new event(s)."
+                    f"{provider_events} new event(s)"
+                    f"{internal_summary}."
                 )
         self.wiki.refresh()
         return CollectionReceipt(

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from agentworkmemory.integrations.processes import hidden_process_creation_flags
 from agentworkmemory.services.sessions.models import AgentEvent, AgentSession
 from agentworkmemory.services.vault.snapshot import VaultSnapshot, read_vault_bytes
 from agentworkmemory.settings import AgentWorkMemoryConfig, save_config
@@ -180,7 +181,7 @@ def normalize_workspace_permissions(root: Path) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            creationflags=hidden_process_creation_flags(),
         )
 
 

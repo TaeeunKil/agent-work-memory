@@ -244,6 +244,43 @@ def test_viewer_can_distill_a_bounded_pending_batch(tmp_path: Path):
     assert activity["summary"].startswith("Wiki build completed")
 
 
+def test_pending_viewer_batch_stays_with_one_workspace_and_can_be_requeued(
+    tmp_path: Path,
+):
+    app, initial = viewer_fixture(tmp_path)
+    project_a = tmp_path / "project-a"
+    project_b = tmp_path / "project-b"
+    first_a = app.sessions.add_manual_note("First A", cwd=project_a)
+    second_a = app.sessions.add_manual_note("Second A", cwd=project_a)
+    latest_b = app.sessions.add_manual_note("Latest B", cwd=project_b)
+    app.sessions.mark_distilled(
+        (initial.session_id,),
+        runtime="viewer-local",
+        distilled_at=datetime.now(UTC),
+    )
+
+    batch = app.sessions.pending_distillation(20)
+
+    assert batch == (latest_b,)
+    app.sessions.mark_distilled(
+        (second_a.session_id,),
+        runtime="viewer-local",
+        distilled_at=datetime.now(UTC),
+    )
+    assert second_a.session_id not in {
+        session.session_id for session in app.sessions.distillation_candidates()
+    }
+
+    app.sessions.requeue_distillation((second_a.session_id,))
+
+    assert second_a.session_id in {
+        session.session_id for session in app.sessions.distillation_candidates()
+    }
+    assert first_a.session_id in {
+        session.session_id for session in app.sessions.distillation_candidates()
+    }
+
+
 def test_viewer_wiki_build_survives_unavailable_activity_ledger(
     tmp_path: Path,
     monkeypatch,

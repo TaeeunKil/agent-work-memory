@@ -61,8 +61,7 @@ class ViewerService:
             session_count=len(sessions),
             knowledge_count=len(pages),
             pending_distill_count=sum(
-                session.content_captured and session.distilled_at is None
-                for session in sessions
+                1 for _ in self.sessions_service.distillation_candidates()
             ),
             last_sync_status=last_sync.status.value if last_sync is not None else None,
             last_sync_at=last_sync.finished_at if last_sync is not None else None,

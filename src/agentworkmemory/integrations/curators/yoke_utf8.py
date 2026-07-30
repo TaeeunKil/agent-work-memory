@@ -4,6 +4,8 @@ from pathlib import Path
 
 from yoke.providers.codex_app.process import JsonRpcLineProcess
 
+from agentworkmemory.integrations.processes import hidden_process_creation_flags
+
 
 def enable_yoke_codex_utf8() -> None:
     """Keep Yoke 0.1.x from decoding Codex JSON-RPC with a Windows locale."""
@@ -33,5 +35,6 @@ def start_codex_process_utf8(
         stderr=subprocess.PIPE,
         bufsize=1,
         start_new_session=True,
+        creationflags=hidden_process_creation_flags(),
     )
     return cls(child)

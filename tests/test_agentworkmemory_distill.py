@@ -1,3 +1,4 @@
+import asyncio
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -8,6 +9,7 @@ import pytest
 
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import main
+from agentworkmemory.integrations.curators.hidden_codex import hidden_run_command
 from agentworkmemory.integrations.curators.yoke import (
     YokeCuratorAdapter,
     apply_windows_curator_output,
@@ -16,6 +18,7 @@ from agentworkmemory.integrations.curators.yoke import (
     standalone_codex_executable,
 )
 from agentworkmemory.integrations.curators.yoke_utf8 import enable_yoke_codex_utf8
+from agentworkmemory.integrations.processes import WINDOWS_CREATE_NO_WINDOW
 from agentworkmemory.services.curators.models import (
     ContentAccess,
     CuratorReadiness,
@@ -153,7 +156,7 @@ def test_batch_distill_divides_evidence_budget_across_sessions(
     )
 
     prompt = adapter.requests[0].prompt
-    assert "[Evidence truncated at curator boundary.]" in prompt
+    assert "[Event excerpt truncated at curator boundary.]" in prompt
     assert "SECOND-SESSION-EVIDENCE" in prompt
 
 
@@ -264,9 +267,10 @@ def test_distill_cli_selects_newest_pending_sessions_with_limit(
     adapter = FakeCuratorAdapter()
     app = distill_app(tmp_path, adapter)
     app.vault.initialize(tmp_path / "vault")
-    oldest = note_session(app, "Old pending evidence.")
-    middle = note_session(app, "Middle pending evidence.")
-    newest = note_session(app, "Newest pending evidence.")
+    project = tmp_path / "project"
+    oldest = note_session(app, "Old pending evidence.", cwd=project)
+    middle = note_session(app, "Middle pending evidence.", cwd=project)
+    newest = note_session(app, "Newest pending evidence.", cwd=project)
     metadata_only = app.sessions.remember_discovered(
         provider="codex",
         provider_session_id="metadata-only",
@@ -550,6 +554,35 @@ def test_yoke_codex_process_uses_utf8_instead_of_windows_locale(
     assert captured["encoding"] == "utf-8"
     assert captured["errors"] == "strict"
     assert captured["env"]["EXAMPLE"] == "1"
+    assert captured["creationflags"] == WINDOWS_CREATE_NO_WINDOW
+
+
+def test_windows_codex_readiness_process_is_hidden(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured = {}
+
+    class FakeProcess:
+        returncode = 0
+
+        async def communicate(self):
+            return b"Logged in", b""
+
+    async def fake_subprocess(*args, **kwargs):
+        captured["args"] = args
+        captured.update(kwargs)
+        return FakeProcess()
+
+    monkeypatch.setattr(
+        "agentworkmemory.integrations.curators.hidden_codex."
+        "asyncio.create_subprocess_exec",
+        fake_subprocess,
+    )
+
+    result = asyncio.run(hidden_run_command("codex", "login", "status"))
+
+    assert result.code == 0
+    assert captured["creationflags"] == WINDOWS_CREATE_NO_WINDOW
 
 
 def test_remote_yoke_curator_rejects_selected_local_content(tmp_path: Path):
@@ -613,8 +646,12 @@ def distill_app(tmp_path: Path, adapter: FakeCuratorAdapter):
     )
 
 
-def note_session(app, text: str):
-    session = app.sessions.add_manual_note(text, title="Distill test")
+def note_session(app, text: str, *, cwd: Path | None = None):
+    session = app.sessions.add_manual_note(
+        text,
+        title="Distill test",
+        cwd=cwd,
+    )
     app.vault.refresh_session(
         session,
         app.sessions.events(session.session_id),

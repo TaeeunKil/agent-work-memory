@@ -1,7 +1,18 @@
+from dataclasses import dataclass
+
 from agentworkmemory.services.curators.models import ContentAccess
 from agentworkmemory.services.sessions.models import AgentEvent, AgentSession
 
 MAX_EVIDENCE_CHARS = 120_000
+FIRST_INTENT_CHARS = 2_000
+RECENT_EVENT_CHARS = 8_000
+
+
+@dataclass(frozen=True)
+class EvidenceExcerpt:
+    event: AgentEvent
+    content: str
+    truncated: bool
 
 
 def distill_prompt(
@@ -49,7 +60,6 @@ def distill_prompt(
     ]
     per_session_budget = MAX_EVIDENCE_CHARS // max(1, len(selected))
     for session, events in selected:
-        remaining = per_session_budget
         session_alias = (
             session.title
             if content_access is not ContentAccess.METADATA_ONLY
@@ -75,21 +85,16 @@ def distill_prompt(
             continue
         lines.append(f"- Title: {session.title}")
         lines.extend(("", "### Selected evidence", ""))
-        for event in events:
-            header = (
-                f"[{event.sequence}] {event.kind.value} "
-                f"{event.role or '-'} · {event.label}"
+        excerpts = select_evidence(events, per_session_budget)
+        if len(excerpts) < len(events):
+            lines.append(
+                f"[Selected {len(excerpts)} of {len(events)} events: "
+                "opening intent and recent conversational outcomes.]"
             )
-            available = max(0, remaining - len(header) - 2)
-            if available == 0:
-                lines.append("[Evidence truncated at curator boundary.]")
-                break
-            content = event.content[:available]
-            lines.extend((header, content, ""))
-            remaining -= len(header) + len(content) + 2
-            if len(content) < len(event.content):
-                lines.append("[Evidence truncated at curator boundary.]")
-                break
+        for item in excerpts:
+            lines.extend((event_header(item.event), item.content, ""))
+            if item.truncated:
+                lines.append("[Event excerpt truncated at curator boundary.]")
     lines.extend(
         (
             "",
@@ -98,3 +103,56 @@ def distill_prompt(
         )
     )
     return "\n".join(lines).strip() + "\n"
+
+
+def select_evidence(
+    events: tuple[AgentEvent, ...],
+    budget: int,
+) -> tuple[EvidenceExcerpt, ...]:
+    if budget <= 0 or not events:
+        return ()
+    conversational = tuple(
+        event
+        for event in events
+        if event.role in {"user", "assistant"}
+        or event.kind.value in {"message", "note"}
+    )
+    candidates = conversational or events
+    first = candidates[0]
+    if len(candidates) == 1:
+        available = max(0, budget - len(event_header(first)) - 2)
+        return (excerpt(first, available),)
+
+    first_budget = min(
+        FIRST_INTENT_CHARS,
+        max(1, budget // 3),
+        max(0, budget - len(event_header(first)) - 2),
+    )
+    selected = [excerpt(first, first_budget)]
+    remaining = budget - len(event_header(first)) - len(selected[0].content) - 2
+    recent: list[EvidenceExcerpt] = []
+    for event in reversed(candidates[1:]):
+        available = remaining - len(event_header(event)) - 2
+        if available <= 0:
+            break
+        item = excerpt(event, min(RECENT_EVENT_CHARS, available))
+        recent.append(item)
+        remaining -= len(event_header(event)) + len(item.content) + 2
+    selected.extend(reversed(recent))
+    return tuple(selected)
+
+
+def excerpt(event: AgentEvent, limit: int) -> EvidenceExcerpt:
+    content = event.content[: max(0, limit)]
+    return EvidenceExcerpt(
+        event=event,
+        content=content,
+        truncated=len(content) < len(event.content),
+    )
+
+
+def event_header(event: AgentEvent) -> str:
+    return (
+        f"[{event.sequence}] {event.kind.value} "
+        f"{event.role or '-'} · {event.label}"
+    )

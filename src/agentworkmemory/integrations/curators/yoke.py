@@ -23,9 +23,9 @@ from yoke import (
     Tools,
     YokeError,
 )
-from yoke.providers.codex import Codex
 
 from agentworkmemory.agents import distill_instructions
+from agentworkmemory.integrations.curators.hidden_codex import HiddenCodex
 from agentworkmemory.integrations.curators.yoke_utf8 import enable_yoke_codex_utf8
 from agentworkmemory.services.curators.models import (
     ContentAccess,
@@ -174,7 +174,7 @@ class YokeCuratorAdapter:
         )
         if surface == "codex_cli":
             harness.with_adapter(
-                Codex(
+                HiddenCodex(
                     executable=standalone_codex_executable(),
                     skip_git_repo_check=True,
                 )
