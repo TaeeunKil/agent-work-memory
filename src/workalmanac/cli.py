@@ -4,9 +4,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from workalmanac.app import WorkAlmanac, create_app
+from workalmanac.services.curators.models import ContentAccess
 from workalmanac.services.sessions.models import AgentProvider
 from workalmanac.settings import load_config
 from workalmanac.workflows.collect import CollectAgentRecords
+from workalmanac.workflows.distill import DistillSessions
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,6 +63,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     import_records.add_argument("path", type=Path)
 
+    distill = commands.add_parser(
+        "distill",
+        help="Promote selected sessions into durable Wiki knowledge.",
+    )
+    distill.add_argument("session_ids", nargs="+")
+    distill.add_argument("--using", dest="runtime", default="codex")
+    distill.add_argument("--model")
+    distill.add_argument(
+        "--allow-remote-content",
+        action="store_true",
+        help="Allow selected session event bodies to be sent to the runtime.",
+    )
+
     commands.add_parser("sessions", help="List retained agent sessions.")
 
     show = commands.add_parser("show", help="Show one retained session.")
@@ -93,6 +108,27 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
         result = app.import_records.import_file(args.path)
         print(f"Imported {result.session_id}; added {result.events_added} event(s).")
         print(result.wiki_path)
+        return 0
+    if args.command == "distill":
+        app.vault.require_path()
+        receipt = app.distill.run(
+            DistillSessions(
+                session_ids=tuple(args.session_ids),
+                runtime=args.runtime,
+                model=args.model,
+                content_access=(
+                    ContentAccess.SELECTED_REMOTE
+                    if args.allow_remote_content
+                    else ContentAccess.METADATA_ONLY
+                ),
+            )
+        )
+        print(f"Distill {receipt.run_id}: {receipt.status.value}")
+        if receipt.changed_files:
+            for path in receipt.changed_files:
+                print(path.as_posix())
+        else:
+            print("No durable Wiki pages changed.")
         return 0
     if args.command == "note":
         app.vault.require_path()

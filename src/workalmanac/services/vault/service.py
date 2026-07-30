@@ -1,8 +1,13 @@
+import shutil
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
 
 from workalmanac.services.sessions.models import AgentEvent, AgentSession
+from workalmanac.services.vault.snapshot import VaultSnapshot
 from workalmanac.settings import WorkAlmanacConfig, save_config
 
 VAULT_DIRECTORIES = (
@@ -13,6 +18,16 @@ VAULT_DIRECTORIES = (
     "procedures",
     "systems",
     "unfinished",
+)
+DURABLE_DIRECTORIES = frozenset(
+    {
+        "projects",
+        "decisions",
+        "problems",
+        "procedures",
+        "systems",
+        "unfinished",
+    }
 )
 
 
@@ -64,6 +79,67 @@ class VaultService:
             sorted(path for path in vault_path.rglob("*.md") if path.is_file())
         )
 
+    def snapshot(self) -> VaultSnapshot:
+        return VaultSnapshot.capture(self.require_path())
+
+    @contextmanager
+    def curator_workspace(
+        self,
+    ) -> Iterator[tuple[Path, VaultSnapshot, VaultSnapshot]]:
+        vault_path = self.require_path()
+        original = VaultSnapshot.capture(vault_path)
+        workspace_root = self.config.state_dir / "distill-workspaces"
+        workspace_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="distill-",
+            dir=workspace_root,
+        ) as temporary:
+            workspace = Path(temporary) / "vault"
+            shutil.copytree(
+                vault_path,
+                workspace,
+                ignore=shutil.ignore_patterns(".git", "inbox"),
+            )
+            yield workspace, VaultSnapshot.capture(workspace), original
+
+    def validate_distill_changes(
+        self,
+        snapshot: VaultSnapshot,
+    ) -> tuple[Path, ...]:
+        changed = snapshot.changed_files()
+        for relative in changed:
+            if not allowed_distill_path(relative):
+                raise ValueError(f"curator changed forbidden Vault path: {relative}")
+            path = snapshot.root / relative
+            if not path.is_file():
+                raise ValueError(f"curator deleted durable Wiki page: {relative}")
+            validate_markdown_page(path)
+        return changed
+
+    def apply_distill_changes(
+        self,
+        workspace: Path,
+        changed: tuple[Path, ...],
+    ) -> None:
+        vault_path = self.require_path()
+        originals: dict[Path, bytes | None] = {}
+        try:
+            for relative in changed:
+                if not allowed_distill_path(relative):
+                    raise ValueError(
+                        f"refusing to apply forbidden Vault path: {relative}"
+                    )
+                source = (workspace / relative).resolve()
+                ensure_inside(workspace, source)
+                target = (vault_path / relative).resolve()
+                ensure_inside(vault_path, target)
+                originals[relative] = target.read_bytes() if target.is_file() else None
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.read_bytes())
+        except Exception:
+            restore_originals(vault_path, originals)
+            raise
+
 
 def render_session_page(
     session: AgentSession,
@@ -98,6 +174,10 @@ def render_session_page(
     ]
     if session.cwd is not None:
         lines.append(f"- Workspace: `{session.cwd}`")
+    if session.distilled_at is not None:
+        lines.append(f"- Distilled: `{session.distilled_at.isoformat()}`")
+    if session.distill_runtime is not None:
+        lines.append(f"- Curator: `{session.distill_runtime}`")
     lines.extend(("", "## Record", ""))
     if not events:
         lines.extend(
@@ -145,6 +225,43 @@ def ensure_inside(root: Path, target: Path) -> None:
         target.relative_to(root.resolve())
     except ValueError as error:
         raise ValueError(f"Wiki path escapes configured Vault: {target}") from error
+
+
+def allowed_distill_path(relative: Path) -> bool:
+    if relative.as_posix() == "README.md":
+        return True
+    return (
+        len(relative.parts) >= 2
+        and relative.parts[0] in DURABLE_DIRECTORIES
+        and relative.suffix.lower() == ".md"
+    )
+
+
+def validate_markdown_page(path: Path) -> None:
+    raw = path.read_text(encoding="utf-8")
+    body = raw
+    if raw.startswith("---\n"):
+        closing = raw.find("\n---\n", 4)
+        if closing < 0:
+            raise ValueError(f"unterminated frontmatter: {path.name}")
+        metadata = yaml.safe_load(raw[4:closing])
+        if metadata is not None and not isinstance(metadata, dict):
+            raise ValueError(f"frontmatter must be a mapping: {path.name}")
+        body = raw[closing + 5 :]
+    if not any(line.startswith("# ") for line in body.splitlines()):
+        raise ValueError(f"Wiki page needs an H1 title: {path.name}")
+
+
+def restore_originals(root: Path, originals: dict[Path, bytes | None]) -> None:
+    for relative, content in originals.items():
+        target = (root / relative).resolve()
+        ensure_inside(root, target)
+        if content is None:
+            if target.is_file():
+                target.unlink()
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
 
 
 def vault_readme() -> str:

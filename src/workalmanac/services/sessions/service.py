@@ -61,6 +61,10 @@ class SessionsService:
                 content_captured=(
                     existing.content_captured if existing is not None else False
                 ),
+                distilled_at=(existing.distilled_at if existing is not None else None),
+                distill_runtime=(
+                    existing.distill_runtime if existing is not None else None
+                ),
                 created_at=existing.created_at if existing is not None else now,
                 updated_at=now,
             )
@@ -154,6 +158,21 @@ class SessionsService:
 
     def cursor_for(self, source_id: str) -> CollectorCursor | None:
         return self.store.cursor_for(source_id)
+
+    def mark_distilled(
+        self,
+        session_ids: tuple[str, ...],
+        *,
+        runtime: str,
+        distilled_at: datetime,
+    ) -> None:
+        for session_id in session_ids:
+            self.get(session_id)
+        self.store.mark_distilled(
+            session_ids,
+            runtime=runtime,
+            distilled_at=distilled_at,
+        )
 
 
 def stable_session_id(

@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   modified_at         TEXT NOT NULL,
   state               TEXT NOT NULL,
   content_captured    INTEGER NOT NULL DEFAULT 0,
+  distilled_at        TEXT,
+  distill_runtime     TEXT,
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,
   UNIQUE(provider, provider_session_id, source_path)
@@ -46,6 +48,19 @@ CREATE TABLE IF NOT EXISTS collector_cursors (
   updated_at   TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS distill_receipts (
+  run_id          TEXT PRIMARY KEY,
+  runtime         TEXT NOT NULL,
+  model           TEXT,
+  content_access  TEXT NOT NULL,
+  session_ids     TEXT NOT NULL,
+  status          TEXT NOT NULL,
+  changed_files   TEXT NOT NULL,
+  output_summary  TEXT,
+  started_at      TEXT NOT NULL,
+  finished_at     TEXT
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS search_documents USING fts5(
   kind UNINDEXED,
   identity UNINDEXED,
@@ -63,8 +78,21 @@ def connect(path: Path) -> sqlite3.Connection:
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA journal_mode = WAL")
     connection.executescript(SCHEMA)
+    ensure_column(connection, "agent_sessions", "distilled_at", "TEXT")
+    ensure_column(connection, "agent_sessions", "distill_runtime", "TEXT")
     connection.commit()
     return connection
+
+
+def ensure_column(
+    connection: sqlite3.Connection,
+    table: str,
+    column: str,
+    declaration: str,
+) -> None:
+    columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
 
 
 @contextmanager

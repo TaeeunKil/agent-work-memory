@@ -99,6 +99,7 @@ wa collect --from codex --from claude
 wa collect --from codex --from claude --include-content
 wa sessions
 wa search "결정 이유"
+wa distill ses_... --using codex --allow-remote-content
 ```
 
 `--include-content` is deliberately separate because agent transcripts may
@@ -127,6 +128,20 @@ Any other agent can write a bundle and use `wa import bundle.json`:
 }
 ```
 
+## Slice 5: durable Wiki distillation
+
+Implemented in [Work Almanac Distill Slice](workalmanac-distill-plan.md):
+
+- [x] provider-neutral curator port;
+- [x] Codex and Claude Yoke curator adapters;
+- [x] explicit metadata-only or selected-remote content policy;
+- [x] isolated disposable curator workspace with `.git` excluded;
+- [x] durable-path and Markdown validation before applying changes;
+- [x] rollback for provider, validation, indexing, and session-state failures;
+- [x] body-free distill receipts and session distilled state;
+- [x] `wa distill` foreground CLI;
+- [x] fake-curator safety tests without paid provider calls.
+
 ## Validation record
 
 - Ruff: all new Work Almanac code and changed contract tests pass.
@@ -141,7 +156,6 @@ Any other agent can write a bundle and use `wa import bundle.json`:
 
 ## Deliberately deferred
 
-- AI distillation into decision/project/problem pages;
 - viewer/server redesign;
 - detached jobs and cancellation;
 - Windows Task Scheduler;
