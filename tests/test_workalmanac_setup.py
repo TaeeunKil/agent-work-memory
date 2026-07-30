@@ -1,5 +1,8 @@
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from workalmanac.app import create_app
 from workalmanac.cli import build_parser, dispatch
@@ -14,6 +17,7 @@ from workalmanac.services.diagnostics.models import DiagnosticStatus
 from workalmanac.services.sessions.models import AgentProvider
 from workalmanac.settings import WorkAlmanacConfig
 from workalmanac.workflows.import_legacy import ImportLegacyAlmanac
+from workalmanac.workflows.import_legacy.service import legacy_namespace
 from workalmanac.workflows.setup import SetupWorkAlmanac
 
 
@@ -139,6 +143,34 @@ def test_legacy_almanac_import_is_isolated_searchable_and_idempotent(
     )
     assert any(wiki_page.category == "imports" for wiki_page in app.wiki.pages())
     assert (vault / "imports" / "_index.md").is_file()
+
+
+def test_invalid_legacy_bundle_leaves_no_partially_imported_pages(tmp_path: Path):
+    app = setup_app(tmp_path, SetupScheduler())
+    vault = app.vault.initialize(tmp_path / "vault")
+    pages = tmp_path / "legacy-repo" / ".almanac" / "pages"
+    pages.mkdir(parents=True)
+    (pages / "a-valid.md").write_text("# Valid\n", encoding="utf-8")
+    (pages / "z-invalid.md").write_bytes(b"\xff")
+
+    with pytest.raises(UnicodeDecodeError):
+        app.import_legacy.run(ImportLegacyAlmanac(source=tmp_path / "legacy-repo"))
+
+    imported = vault / "imports" / "repository-almanacs"
+    assert not tuple(imported.rglob("a-valid.md"))
+
+
+def test_legacy_namespace_uses_platform_path_case_rules(tmp_path: Path):
+    repository = tmp_path / "LegacyRepo"
+
+    if os.name == "nt":
+        assert legacy_namespace(repository) == legacy_namespace(
+            Path(str(repository).upper())
+        )
+    else:
+        assert legacy_namespace(repository) != legacy_namespace(
+            Path(str(repository).upper())
+        )
 
 
 def test_doctor_reports_local_state_without_absolute_transcript_paths(
