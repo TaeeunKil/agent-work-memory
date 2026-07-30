@@ -22,6 +22,7 @@ from agentworkmemory.services.sessions.models import (
     SSH_REMOTE_TRANSCRIPT_PROVIDERS,
 )
 from agentworkmemory.services.synchronization.models import SyncReceipt, SyncStatus
+from agentworkmemory.services.vault_repository.service import DEFAULT_COMMIT_MESSAGE
 from agentworkmemory.settings import load_config
 from agentworkmemory.workflows.auto_distill import AutoDistillRunState
 from agentworkmemory.workflows.collect import CollectAgentRecords
@@ -56,9 +57,45 @@ def build_parser() -> argparse.ArgumentParser:
         help="Initialize, collect, and optionally install automatic sync.",
     )
     setup.add_argument("path", type=Path)
+    setup.add_argument(
+        "--vault-repo",
+        help="Clone an existing private Vault repository into PATH first.",
+    )
     setup.add_argument("--auto", action="store_true")
     setup.add_argument("--every", type=int, default=5, metavar="MINUTES")
     add_collection_options(setup)
+
+    vault = commands.add_parser(
+        "vault",
+        help="Carry the private Markdown Vault in a separate Git repository.",
+    )
+    vault_commands = vault.add_subparsers(dest="vault_command", required=True)
+    vault_connect = vault_commands.add_parser(
+        "connect",
+        help="Clone an existing Vault repository and use it on this machine.",
+    )
+    vault_connect.add_argument("repository")
+    vault_connect.add_argument("path", type=Path)
+    vault_publish = vault_commands.add_parser(
+        "publish",
+        help="Publish the configured Vault to an empty private repository.",
+    )
+    vault_publish.add_argument("repository")
+    vault_commands.add_parser("status", help="Show the Vault repository state.")
+    vault_commands.add_parser(
+        "pull",
+        help="Pull remote Vault changes when the local tree is clean.",
+    )
+    vault_push = vault_commands.add_parser(
+        "push",
+        help="Commit and push all current Vault changes.",
+    )
+    vault_push.add_argument("--message", default=DEFAULT_COMMIT_MESSAGE)
+    vault_sync = vault_commands.add_parser(
+        "sync",
+        help="Commit local changes, pull with rebase, and push.",
+    )
+    vault_sync.add_argument("--message", default=DEFAULT_COMMIT_MESSAGE)
 
     note = commands.add_parser("note", help="Save a manual work note.")
     note.add_argument("text")
@@ -298,6 +335,8 @@ def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
         print(f"Initialized Agent Work Memory Vault at {path}")
         return 0
     if args.command == "setup":
+        if args.vault_repo is not None:
+            app.vault_repository.connect(args.vault_repo, args.path)
         result = app.setup.run(
             SetupAgentWorkMemory(
                 vault_path=args.path,
@@ -315,6 +354,8 @@ def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
             print(f"Automatic sync installed every {args.every} minute(s).")
         print("Open the Wiki with `awm serve` or Obsidian.")
         return 0
+    if args.command == "vault":
+        return dispatch_vault(args, app)
     if args.command == "import":
         app.vault.require_path()
         result = app.import_records.import_file(args.path)
@@ -524,6 +565,47 @@ def sync_request(args: argparse.Namespace) -> SyncAgentRecords:
         home=args.home.expanduser().resolve(),
         include_content=args.include_content,
     )
+
+
+def dispatch_vault(args: argparse.Namespace, app: AgentWorkMemory) -> int:
+    if args.vault_command == "connect":
+        path = app.vault_repository.connect(args.repository, args.path)
+        print(f"Connected Agent Work Memory Vault at {path}")
+        print("Wiki navigation and local search were refreshed.")
+        return 0
+    if args.vault_command == "publish":
+        result = app.vault_repository.publish(args.repository)
+        print(f"Published Agent Work Memory Vault from {result.path}")
+        return 0
+    if args.vault_command == "status":
+        status = app.vault_repository.status()
+        state = "clean" if status.clean else f"{status.changes} change(s)"
+        print(f"path: {status.path}")
+        print(f"branch: {status.branch}")
+        print(f"remote: {status.remote}")
+        print(f"worktree: {state}")
+        return 0
+    if args.vault_command == "pull":
+        result = app.vault_repository.pull()
+        print(f"Pulled Agent Work Memory Vault at {result.path}")
+        print("Wiki navigation and local search were refreshed.")
+        return 0
+    if args.vault_command == "push":
+        result = app.vault_repository.push(args.message)
+        action = "Committed and pushed" if result.committed else "Pushed"
+        print(f"{action} Agent Work Memory Vault at {result.path}")
+        return 0
+    if args.vault_command == "sync":
+        result = app.vault_repository.sync(args.message)
+        action = (
+            "Committed, pulled, and pushed"
+            if result.committed
+            else "Pulled and pushed"
+        )
+        print(f"{action} Agent Work Memory Vault at {result.path}")
+        print("Wiki navigation and local search were refreshed.")
+        return 0
+    raise ValueError(f"unsupported vault command: {args.vault_command}")
 
 
 def dispatch_auto(args: argparse.Namespace, app: AgentWorkMemory) -> int:

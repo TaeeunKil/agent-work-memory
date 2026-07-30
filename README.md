@@ -29,6 +29,44 @@ awm setup C:\Users\user\Documents\AgentWorkMemoryVault `
 terminal output, internal paths, customer information, or secrets. Automatic
 sync retains evidence only and never invokes a model.
 
+### Keep the Vault in a private Git repository
+
+The application and personal memory are intentionally separate repositories:
+
+- `agent-work-memory` contains the shareable AWM application.
+- your private repository contains the entire Markdown Vault, including
+  `inbox/agent-sessions`.
+- the local SQLite database, logs, locks, and Windows schedules stay outside
+  both repositories under `%LOCALAPPDATA%\AgentWorkMemory`.
+
+To publish an existing configured Vault to an empty private repository:
+
+```powershell
+awm vault publish https://github.com/YOUR-NAME/YOUR-PRIVATE-VAULT.git
+```
+
+On a new machine, install AWM and clone the private Vault during setup:
+
+```powershell
+awm setup C:\Users\YOUR-NAME\Documents\AgentWorkMemoryVault `
+  --vault-repo https://github.com/YOUR-NAME/YOUR-PRIVATE-VAULT.git `
+  --include-content
+```
+
+Use Git-backed Vault commands during normal work:
+
+```powershell
+awm vault status
+awm vault sync
+awm vault push --message "Update personal memory"
+awm vault pull
+```
+
+`awm vault sync` commits all Vault changes, pulls with rebase, and pushes
+without force. Keep the repository private: retained session pages can contain
+source code, internal paths, customer information, credentials, and other
+sensitive material.
+
 ## Daily use
 
 ```powershell
