@@ -111,10 +111,12 @@ class YokeCuratorAdapter:
             runtime=self.runtime,
             platform=sys.platform,
         )
+        stage = "prepare-handoff"
         try:
             if output_path is not None:
                 output_path.write_text('{"files":[]}\n', encoding="utf-8")
             surface = curator_surface(self.runtime, sys.platform)
+            stage = "run-provider"
             try:
                 run = self.harness(request.vault_path).run_sync(
                     request.prompt,
@@ -126,15 +128,19 @@ class YokeCuratorAdapter:
                     and self.workspace_permission_repair is not None
                 ):
                     self.workspace_permission_repair(request.vault_path)
+            stage = "interpret-status"
             status = CuratorRunStatus(str(run.status))
             if status is CuratorRunStatus.SUCCEEDED and output_path is not None:
+                stage = "read-handoff"
+                raw_output = read_windows_curator_output(
+                    output_path,
+                    vault_path=request.vault_path,
+                    permission_repair=self.workspace_permission_repair,
+                )
+                stage = "apply-handoff"
                 apply_windows_curator_output(
                     request.vault_path,
-                    read_windows_curator_output(
-                        output_path,
-                        vault_path=request.vault_path,
-                        permission_repair=self.workspace_permission_repair,
-                    ),
+                    raw_output,
                 )
         except (
             OSError,
@@ -146,7 +152,10 @@ class YokeCuratorAdapter:
             return CuratorRunResult(
                 runtime=self.runtime,
                 status=CuratorRunStatus.FAILED,
-                output_text=(f"{self.runtime} curator failed ({type(error).__name__})"),
+                output_text=(
+                    f"{self.runtime} curator failed during {stage} "
+                    f"({type(error).__name__})"
+                ),
             )
         finally:
             if output_path is not None:

@@ -10,7 +10,10 @@ import pytest
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import main
 from agentworkmemory.integrations.curators import yoke as yoke_curator
-from agentworkmemory.integrations.curators.hidden_codex import hidden_run_command
+from agentworkmemory.integrations.curators.hidden_codex import (
+    HiddenCodexCli,
+    hidden_run_command,
+)
 from agentworkmemory.integrations.curators.yoke import (
     YokeCuratorAdapter,
     apply_windows_curator_output,
@@ -739,6 +742,46 @@ def test_windows_codex_readiness_process_is_hidden(
     assert captured["creationflags"] == WINDOWS_CREATE_NO_WINDOW
 
 
+def test_windows_codex_cli_buffers_process_without_asyncio_pipes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=b'{"type":"turn.completed"}\n',
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(
+        "agentworkmemory.integrations.curators.hidden_codex.subprocess.run",
+        fake_run,
+    )
+
+    async def collect():
+        cli = HiddenCodexCli(executable="codex")
+        return [
+            event
+            async for event in cli.run(
+                "Finish.",
+                cwd=tmp_path,
+                skip_git_repo_check=True,
+            )
+        ]
+
+    events = asyncio.run(collect())
+
+    assert events == [{"type": "turn.completed"}]
+    assert captured["input"] == b"Finish."
+    assert captured["stdout"] == asyncio.subprocess.PIPE
+    assert captured["stderr"] == asyncio.subprocess.PIPE
+    assert captured["creationflags"] == WINDOWS_CREATE_NO_WINDOW
+
+
 def test_remote_yoke_curator_rejects_selected_local_content(tmp_path: Path):
     adapter = YokeCuratorAdapter("claude", tmp_path / "state/curators/claude")
 
@@ -787,7 +830,9 @@ def test_yoke_curator_redacts_permission_failures(
     assert "PermissionError" in readiness.message
     assert r"C:\private" not in readiness.message
     assert result.status is CuratorRunStatus.FAILED
-    assert result.output_text == "codex curator failed (PermissionError)"
+    assert result.output_text == (
+        "codex curator failed during run-provider (PermissionError)"
+    )
 
 
 def distill_app(tmp_path: Path, adapter: FakeCuratorAdapter):

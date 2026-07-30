@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import subprocess
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -137,22 +138,17 @@ class HiddenCodexCli(CodexCli):
             if self.env is not None:
                 process_env.update(self.env)
             process_env.setdefault(ORIGINATOR_ENV, YOKE_ORIGINATOR)
-            process = await asyncio.create_subprocess_exec(
-                *args,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            completed = await asyncio.to_thread(
+                subprocess.run,
+                args,
+                input=prompt.encode(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 env=process_env,
+                check=False,
                 creationflags=hidden_process_creation_flags(),
             )
-            assert process.stdin is not None
-            assert process.stdout is not None
-            assert process.stderr is not None
-            process.stdin.write(prompt.encode())
-            await process.stdin.drain()
-            process.stdin.close()
-
-            async for raw in process.stdout:
+            for raw in completed.stdout.splitlines():
                 line = raw.decode().strip()
                 if not line:
                     continue
@@ -163,10 +159,11 @@ class HiddenCodexCli(CodexCli):
                         f"Codex emitted invalid JSONL: {line}"
                     ) from error
 
-            code = await process.wait()
-            if code != 0:
-                stderr = (await process.stderr.read()).decode().strip()
-                raise YokeError(f"codex exec exited with code {code}: {stderr}")
+            if completed.returncode != 0:
+                stderr = completed.stderr.decode(errors="replace").strip()
+                raise YokeError(
+                    f"codex exec exited with code {completed.returncode}: {stderr}"
+                )
         finally:
             if schema_path is not None:
                 schema_path.unlink(missing_ok=True)
