@@ -10,6 +10,7 @@ from workalmanac.integrations.curators.yoke import (
     YokeCuratorAdapter,
     run_options,
 )
+from workalmanac.integrations.curators.yoke_utf8 import enable_yoke_codex_utf8
 from workalmanac.services.curators.models import (
     ContentAccess,
     CuratorReadiness,
@@ -367,6 +368,47 @@ def test_yoke_curator_is_wiki_write_only_and_offline(tmp_path: Path):
     assert options.provider.codex is not None
     assert options.provider.codex.sandbox == "workspace-write"
     assert options.provider.codex.approval == "never"
+
+
+def test_yoke_codex_process_uses_utf8_instead_of_windows_locale(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from yoke.providers.codex_app.process import JsonRpcLineProcess
+
+    captured = {}
+
+    class FakeChild:
+        stdin = None
+        stdout = iter(())
+        stderr = iter(())
+
+        def poll(self):
+            return 0
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return FakeChild()
+
+    monkeypatch.setattr(JsonRpcLineProcess, "start", JsonRpcLineProcess.start)
+    monkeypatch.setattr(
+        "workalmanac.integrations.curators.yoke_utf8.subprocess.Popen",
+        fake_popen,
+    )
+
+    enable_yoke_codex_utf8()
+    JsonRpcLineProcess.start(
+        "codex",
+        ("app-server",),
+        tmp_path,
+        {"EXAMPLE": "1"},
+    )
+
+    assert captured["command"] == ("codex", "app-server")
+    assert captured["encoding"] == "utf-8"
+    assert captured["errors"] == "strict"
+    assert captured["env"]["EXAMPLE"] == "1"
 
 
 def test_remote_yoke_curator_rejects_selected_local_content(tmp_path: Path):

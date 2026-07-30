@@ -19,6 +19,7 @@ from yoke import (
 )
 
 from workalmanac.agents import distill_instructions
+from workalmanac.integrations.curators.yoke_utf8 import enable_yoke_codex_utf8
 from workalmanac.services.curators.models import (
     ContentAccess,
     CuratorReadiness,
@@ -95,6 +96,8 @@ class YokeCuratorAdapter:
         )
 
     def harness(self, cwd: Path) -> Harness:
+        if self.runtime == "codex":
+            enable_yoke_codex_utf8()
         return Harness(
             provider=self.runtime,
             surface="codex_app_server" if self.runtime == "codex" else None,
