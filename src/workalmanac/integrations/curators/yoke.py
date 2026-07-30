@@ -79,9 +79,10 @@ class YokeCuratorAdapter:
                 f"{self.runtime} is a remote runtime; selected-local is not allowed"
             )
         try:
+            surface = curator_surface(self.runtime, sys.platform)
             run = self.harness(request.vault_path).run_sync(
                 request.prompt,
-                run_options(request),
+                run_options(request, surface=surface),
             )
         except (OSError, TimeoutError, ValidationError, YokeError) as error:
             return CuratorRunResult(
@@ -158,7 +159,11 @@ def standalone_codex_executable() -> str:
     return shutil.which("codex") or "codex"
 
 
-def run_options(request: CuratorRunRequest) -> RunOptions:
+def run_options(
+    request: CuratorRunRequest,
+    *,
+    surface: str | None = "codex_app_server",
+) -> RunOptions:
     permissions = Permissions(
         access=Access.WRITE,
         approval=Approval.NEVER,
@@ -184,6 +189,8 @@ def run_options(request: CuratorRunRequest) -> RunOptions:
                 runtime_workspace_roots=(str(request.vault_path),),
             )
         )
+        if surface == "codex_app_server"
+        else None
     )
     return RunOptions(
         model=request.model,

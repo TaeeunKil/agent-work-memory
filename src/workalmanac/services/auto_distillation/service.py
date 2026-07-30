@@ -62,6 +62,18 @@ class AutoDistillationService:
         self.store.save(updated)
         return updated
 
+    def refund_sessions(self, count: int) -> AutoDistillSettings:
+        if count < 1:
+            raise ValueError("refunded session count must be positive")
+        settings = self.settings()
+        if count > settings.sessions_reserved:
+            raise ValueError("cannot refund more sessions than were reserved")
+        updated = settings.model_copy(
+            update={"sessions_reserved": settings.sessions_reserved - count}
+        )
+        self.store.save(updated)
+        return updated
+
     def status(self) -> AutoDistillStatus:
         available = self.adapter.available()
         installed = available and self.adapter.installed()
