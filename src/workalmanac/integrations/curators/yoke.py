@@ -49,11 +49,18 @@ class YokeCuratorAdapter:
                 message=readiness.message,
                 repair=readiness.fix,
             )
-        except (FileNotFoundError, TimeoutError, ValidationError, YokeError) as error:
+        except (OSError, TimeoutError, ValidationError, YokeError) as error:
             return CuratorReadiness(
                 runtime=self.runtime,
                 available=False,
-                message=str(error),
+                message=(
+                    f"{self.runtime.title()} runtime check failed "
+                    f"({type(error).__name__})."
+                ),
+                repair=(
+                    f"Verify that {self.runtime.title()} is installed, "
+                    "signed in, and executable."
+                ),
             )
 
     def run(self, request: CuratorRunRequest) -> CuratorRunResult:
@@ -71,11 +78,11 @@ class YokeCuratorAdapter:
                 request.prompt,
                 run_options(request),
             )
-        except (FileNotFoundError, TimeoutError, ValidationError, YokeError) as error:
+        except (OSError, TimeoutError, ValidationError, YokeError) as error:
             return CuratorRunResult(
                 runtime=self.runtime,
                 status=CuratorRunStatus.FAILED,
-                output_text=str(error),
+                output_text=(f"{self.runtime} curator failed ({type(error).__name__})"),
             )
         output = run.output or (
             run.failure.message if run.failure is not None else str(run.status)

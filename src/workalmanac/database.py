@@ -80,6 +80,15 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_documents USING fts5(
   title,
   body
 );
+
+CREATE TABLE IF NOT EXISTS search_index_state (
+  id                  INTEGER PRIMARY KEY CHECK (id = 1),
+  session_count       INTEGER NOT NULL,
+  session_version     TEXT NOT NULL,
+  event_count         INTEGER NOT NULL,
+  event_rowid         INTEGER NOT NULL,
+  vault_digest        TEXT NOT NULL
+);
 """
 
 

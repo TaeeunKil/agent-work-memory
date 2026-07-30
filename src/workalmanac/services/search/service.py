@@ -1,7 +1,9 @@
 import re
+from hashlib import sha256
 from pathlib import Path
 
 from workalmanac.database import open_database
+from workalmanac.services.search.models import SearchSourceSignature
 from workalmanac.services.sessions.models import SearchResult
 from workalmanac.services.sessions.service import SessionsService
 from workalmanac.services.vault.service import VaultService
@@ -22,7 +24,7 @@ class SearchService:
         terms = query_terms(query)
         if not terms:
             return ()
-        self.refresh()
+        self.refresh_if_stale()
         with open_database(self.database_path) as connection:
             rows = connection.execute(
                 """
@@ -48,7 +50,13 @@ class SearchService:
             for row in rows
         )
 
-    def refresh(self) -> None:
+    def refresh_if_stale(self) -> None:
+        signature = self.source_signature()
+        if self.indexed_signature() != signature:
+            self.refresh(signature)
+
+    def refresh(self, signature: SearchSourceSignature | None = None) -> None:
+        indexed_signature = signature or self.source_signature()
         documents: list[tuple[str, str, str, str]] = []
         for session in self.sessions.list():
             events = self.sessions.events(session.session_id)
@@ -68,7 +76,62 @@ class SearchService:
                 """,
                 documents,
             )
+            connection.execute(
+                """
+                INSERT INTO search_index_state (
+                  id, session_count, session_version, event_count,
+                  event_rowid, vault_digest
+                ) VALUES (1, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  session_count = excluded.session_count,
+                  session_version = excluded.session_version,
+                  event_count = excluded.event_count,
+                  event_rowid = excluded.event_rowid,
+                  vault_digest = excluded.vault_digest
+                """,
+                signature_values(indexed_signature),
+            )
             connection.commit()
+
+    def source_signature(self) -> SearchSourceSignature:
+        with open_database(self.database_path) as connection:
+            row = connection.execute(
+                """
+                SELECT
+                  (SELECT COUNT(*) FROM agent_sessions) AS session_count,
+                  COALESCE(
+                    (SELECT MAX(updated_at) FROM agent_sessions),
+                    ''
+                  ) AS session_version,
+                  (SELECT COUNT(*) FROM agent_events) AS event_count,
+                  COALESCE(
+                    (SELECT MAX(rowid) FROM agent_events),
+                    0
+                  ) AS event_rowid
+                """
+            ).fetchone()
+        return SearchSourceSignature(
+            session_count=row["session_count"],
+            session_version=row["session_version"],
+            event_count=row["event_count"],
+            event_rowid=row["event_rowid"],
+            vault_digest=vault_digest(self.vault),
+        )
+
+    def indexed_signature(self) -> SearchSourceSignature | None:
+        with open_database(self.database_path) as connection:
+            row = connection.execute(
+                "SELECT * FROM search_index_state WHERE id = 1"
+            ).fetchone()
+        if row is None:
+            return None
+        return SearchSourceSignature(
+            session_count=row["session_count"],
+            session_version=row["session_version"],
+            event_count=row["event_count"],
+            event_rowid=row["event_rowid"],
+            vault_digest=row["vault_digest"],
+        )
 
 
 def query_terms(query: str) -> tuple[str, ...]:
@@ -85,3 +148,23 @@ def markdown_title(path: Path, raw: str) -> str:
         if line.startswith("# "):
             return line[2:].strip()
     return path.stem
+
+
+def vault_digest(vault: VaultService) -> str:
+    root = vault.require_path()
+    digest = sha256()
+    for path in vault.markdown_files():
+        stat = path.stat()
+        relative = path.relative_to(root).as_posix()
+        digest.update(f"{relative}\0{stat.st_mtime_ns}\0{stat.st_size}\n".encode())
+    return digest.hexdigest()
+
+
+def signature_values(signature: SearchSourceSignature) -> tuple[object, ...]:
+    return (
+        signature.session_count,
+        signature.session_version,
+        signature.event_count,
+        signature.event_rowid,
+        signature.vault_digest,
+    )

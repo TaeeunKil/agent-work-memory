@@ -8,7 +8,10 @@ from workalmanac.settings import WorkAlmanacConfig
 from workalmanac.workflows.collect import CollectAgentRecords
 
 
-def test_manual_note_becomes_searchable_wiki_record(tmp_path: Path):
+def test_manual_note_becomes_searchable_wiki_record(
+    tmp_path: Path,
+    monkeypatch,
+):
     app = isolated_app(tmp_path)
     vault = app.vault.initialize(tmp_path / "vault")
 
@@ -27,6 +30,27 @@ def test_manual_note_becomes_searchable_wiki_record(tmp_path: Path):
     results = app.search.find("central writer")
     assert any(result.identity == session.session_id for result in results)
     assert any(result.identity.endswith(".md") for result in results)
+
+    refresh_calls = 0
+    original_refresh = app.search.refresh
+
+    def count_refresh(signature=None) -> None:
+        nonlocal refresh_calls
+        refresh_calls += 1
+        original_refresh(signature)
+
+    monkeypatch.setattr(app.search, "refresh", count_refresh)
+    app.search.find("central writer")
+    assert refresh_calls == 0
+
+    second = app.sessions.add_manual_note(
+        "Remember the separate reader boundary.",
+        title="Reader boundary",
+    )
+    app.vault.refresh_session(second, app.sessions.events(second.session_id))
+
+    assert app.search.find("separate reader")
+    assert refresh_calls == 1
 
 
 def test_collects_codex_and_claude_without_repository_registration(tmp_path: Path):
