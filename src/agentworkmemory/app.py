@@ -45,6 +45,7 @@ from agentworkmemory.settings import AgentWorkMemoryConfig, load_config
 from agentworkmemory.workflows.auto_distill import AutoDistillWorkflow
 from agentworkmemory.workflows.collect import CollectAgentRecordsWorkflow
 from agentworkmemory.workflows.distill import DistillSessionsWorkflow
+from agentworkmemory.workflows.distill.coordination import DistillCoordination
 from agentworkmemory.workflows.import_legacy import ImportLegacyAlmanacWorkflow
 from agentworkmemory.workflows.import_records import ImportAgentRecordsWorkflow
 from agentworkmemory.workflows.remote_sync import SyncRemoteRecordsWorkflow
@@ -66,6 +67,7 @@ class AgentWorkMemory:
         curators: CuratorsService,
         diagnostics: DiagnosticsService,
         distill: DistillSessionsWorkflow,
+        distill_coordination: DistillCoordination,
         distillation: DistillationService,
         import_records: ImportAgentRecordsWorkflow,
         import_legacy: ImportLegacyAlmanacWorkflow,
@@ -88,6 +90,7 @@ class AgentWorkMemory:
         self.curators = curators
         self.diagnostics = diagnostics
         self.distill = distill
+        self.distill_coordination = distill_coordination
         self.distillation = distillation
         self.import_records = import_records
         self.import_legacy = import_legacy
@@ -202,12 +205,15 @@ def create_app(
         search,
         wiki,
     )
+    distill_coordination = DistillCoordination(
+        resolved.state_dir / "auto-distill.lock",
+        resolved.state_dir / "sync.lock",
+    )
     auto_distill = AutoDistillWorkflow(
         auto_distillation,
         sessions,
         distill,
-        resolved.state_dir / "auto-distill.lock",
-        resolved.state_dir / "sync.lock",
+        distill_coordination,
     )
     return AgentWorkMemory(
         automation=automation,
@@ -220,6 +226,7 @@ def create_app(
         curators=curators,
         diagnostics=diagnostics,
         distill=distill,
+        distill_coordination=distill_coordination,
         distillation=distillation,
         import_records=import_records,
         import_legacy=import_legacy,

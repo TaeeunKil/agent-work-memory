@@ -17,6 +17,7 @@
 
         <nav class="primary-nav" aria-label="Primary">
           <button class="nav-item is-active" data-view="overview">Today</button>
+          <button class="nav-item" data-view="projects">Projects</button>
           <button class="nav-item" data-view="sessions">Sessions</button>
           <button class="nav-item" data-view="knowledge">Knowledge</button>
           <button class="nav-item" data-view="activity">Activity</button>
@@ -42,9 +43,14 @@
             <button class="search-submit" type="submit" aria-label="Search">↵</button>
             <kbd>Enter</kbd>
           </form>
-          <button id="sync-button" class="primary-action" type="button">
-            Sync transcripts
-          </button>
+          <div class="topbar-actions">
+            <button id="sync-button" class="secondary-action" type="button">
+              Sync transcripts
+            </button>
+            <button id="build-wiki-button" class="primary-action" type="button">
+              Build Wiki
+            </button>
+          </div>
         </header>
 
         <section id="workspace" class="workspace" aria-live="polite">

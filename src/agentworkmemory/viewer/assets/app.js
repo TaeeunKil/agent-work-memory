@@ -3,6 +3,7 @@ const state = {
   overview: null,
   sessions: [],
   pages: [],
+  projects: [],
   receipts: { sync: [], distill: [] },
   activity: [],
   schedules: [],
@@ -12,6 +13,7 @@ const state = {
 const workspace = document.querySelector("#workspace");
 const inspector = document.querySelector("#inspector-content");
 const syncButton = document.querySelector("#sync-button");
+const buildWikiButton = document.querySelector("#build-wiki-button");
 const toast = document.querySelector("#toast");
 
 document.querySelectorAll(".nav-item").forEach((button) => {
@@ -21,6 +23,7 @@ document.querySelectorAll(".nav-item").forEach((button) => {
 document.querySelector("#close-inspector").addEventListener("click", closeInspector);
 document.querySelector("#search-form").addEventListener("submit", search);
 syncButton.addEventListener("click", syncTranscripts);
+buildWikiButton.addEventListener("click", openBuildWiki);
 window.addEventListener("hashchange", openHashTarget);
 
 boot();
@@ -54,15 +57,17 @@ async function refreshSchedules() {
 }
 
 async function refreshData() {
-  const [overview, sessions, pages, receipts] = await Promise.all([
+  const [overview, sessions, pages, projects, receipts] = await Promise.all([
     api("/api/overview"),
     api("/api/sessions"),
     api("/api/pages"),
+    api("/api/projects"),
     api("/api/receipts"),
   ]);
   state.overview = overview;
   state.sessions = sessions;
   state.pages = pages;
+  state.projects = projects;
   state.receipts = receipts;
   updateRailStatus();
 }
@@ -106,10 +111,28 @@ function setView(view) {
 }
 
 function render() {
-  if (state.view === "sessions") renderSessions();
+  if (state.view === "projects") renderProjects();
+  else if (state.view === "sessions") renderSessions();
   else if (state.view === "knowledge") renderKnowledge();
   else if (state.view === "activity") renderActivity();
   else renderOverview();
+}
+
+function renderProjects() {
+  workspace.innerHTML = `
+    <header class="view-header">
+      <div>
+        <p class="eyebrow">Connected knowledge</p>
+        <h1>Projects</h1>
+      </div>
+      <p class="quiet">Each project gathers its canonical topic pages and the sessions that support them.</p>
+    </header>
+    <section class="section-block">
+      ${sectionHeading("Project hubs", `${state.projects.length} total`)}
+      <div class="record-list">${state.projects.map(projectRow).join("") || emptyRow("Build the Wiki to create the first project hub.")}</div>
+    </section>
+  `;
+  bindRows();
 }
 
 function renderOverview() {
@@ -243,8 +266,37 @@ function bindRows() {
   document.querySelectorAll("[data-page]").forEach((row) => {
     row.addEventListener("click", () => openPage(row.dataset.page));
   });
+  document.querySelectorAll("[data-project]").forEach((row) => {
+    row.addEventListener("click", () => openProject(row.dataset.project));
+  });
   document.querySelectorAll("[data-category]").forEach((button) => {
     button.addEventListener("click", () => renderKnowledge(button.dataset.category));
+  });
+}
+
+async function openProject(path) {
+  const detail = await api(`/api/project?path=${encodeURIComponent(path)}`);
+  document.body.classList.add("has-inspector");
+  inspector.innerHTML = `
+    <p class="eyebrow">Project hub</p>
+    <h2>${escapeHtml(detail.page.title)}</h2>
+    <div class="inspector-meta">
+      <span>${detail.topics.length} topic pages</span>
+      <span>${detail.sessions.length} source sessions</span>
+    </div>
+    <article class="markdown">${detail.page.html}</article>
+    <section class="inspector-section">
+      <p class="eyebrow">Topics</p>
+      <div class="record-list">${detail.topics.map(pageRow).join("") || emptyRow("No linked topic pages yet.")}</div>
+    </section>
+    <section class="inspector-section">
+      <p class="eyebrow">Evidence</p>
+      <div class="record-list">${detail.sessions.map(sessionRow).join("") || emptyRow("No source sessions cited yet.")}</div>
+    </section>
+  `;
+  bindRows();
+  inspector.querySelectorAll("a[href^='#/wiki/']").forEach((link) => {
+    link.addEventListener("click", openHashTarget);
   });
 }
 
@@ -401,6 +453,60 @@ async function syncTranscripts() {
   }
 }
 
+function openBuildWiki() {
+  document.body.classList.add("has-inspector");
+  inspector.innerHTML = `
+    <p class="eyebrow">Durable knowledge</p>
+    <h2>Build the Wiki</h2>
+    <div class="inspector-meta">
+      <span>${state.overview.pending_distill_count} sessions waiting</span>
+      <span>${state.projects.length} project hubs</span>
+    </div>
+    <p class="quiet">The next bounded batch will be merged into canonical topic pages. Existing topics are updated instead of duplicated.</p>
+    ${buildWikiControls()}
+  `;
+  const button = document.querySelector("#build-pending-button");
+  button.addEventListener("click", distillPending);
+}
+
+async function distillPending() {
+  const button = document.querySelector("#build-pending-button");
+  const runtime = document.querySelector("#build-runtime").value;
+  const model = document.querySelector("#build-model").value.trim() || null;
+  const contentAccess = document.querySelector("#build-access").value;
+  const limit = Number(document.querySelector("#build-limit").value);
+  if (!contentAccess) {
+    showToast("Choose what session content the curator may read.");
+    return;
+  }
+  button.classList.add("is-busy");
+  button.textContent = "Building topic pages…";
+  try {
+    const receipt = await api("/api/distill/pending", {
+      method: "POST",
+      headers: actionHeaders(),
+      body: JSON.stringify({
+        limit,
+        runtime,
+        model,
+        content_access: contentAccess,
+      }),
+    });
+    await refreshData();
+    state.view = "projects";
+    document.querySelectorAll(".nav-item").forEach((item) => {
+      item.classList.toggle("is-active", item.dataset.view === "projects");
+    });
+    renderProjects();
+    openBuildWiki();
+    showToast(`${receipt.changed_files.length} topic pages changed.`);
+  } catch (error) {
+    showToast(error.message);
+    button.classList.remove("is-busy");
+    button.textContent = "Build next batch";
+  }
+}
+
 async function distillSelected() {
   const button = document.querySelector("#distill-button");
   const runtime = document.querySelector("#distill-runtime").value;
@@ -488,6 +594,17 @@ function pageRow(page) {
     </button>`;
 }
 
+function projectRow(project) {
+  return `
+    <button class="record-row project-row" type="button" data-project="${escapeHtml(project.path)}">
+      <span>
+        <span class="record-title">${escapeHtml(project.title)}</span>
+        <span class="record-meta">${project.topic_count} topics · ${project.source_session_ids.length} source sessions</span>
+      </span>
+      <span class="record-side">Open project →</span>
+    </button>`;
+}
+
 function searchRow(result) {
   const attribute = result.kind === "session"
     ? `data-session="${escapeHtml(result.identity)}"`
@@ -526,6 +643,45 @@ function distillControls(sessionId) {
       </select>
       <button id="distill-button" class="primary-action" type="button" data-session="${escapeHtml(sessionId)}">
         Distill selected session
+      </button>
+    </div>`;
+}
+
+function buildWikiControls() {
+  const disabled = state.overview.pending_distill_count === 0 ? "disabled" : "";
+  return `
+    <div class="distill-controls build-wiki-controls">
+      <label>
+        <span>Runtime</span>
+        <select id="build-runtime" aria-label="Curator runtime">
+          <option value="codex">Codex · remote</option>
+          <option value="ollama">Ollama · local</option>
+          <option value="claude">Claude · remote</option>
+        </select>
+      </label>
+      <label>
+        <span>Batch size</span>
+        <select id="build-limit" aria-label="Pending session batch size">
+          <option value="5">5 sessions</option>
+          <option value="10" selected>10 sessions</option>
+          <option value="20">20 sessions</option>
+        </select>
+      </label>
+      <label class="control-wide">
+        <span>Model</span>
+        <input id="build-model" placeholder="Required for Ollama" aria-label="Model">
+      </label>
+      <label class="control-wide">
+        <span>Content permission</span>
+        <select id="build-access" aria-label="Content access">
+          <option value="" selected disabled>Choose permission…</option>
+          <option value="metadata-only">Metadata only</option>
+          <option value="selected-local">Selected content · local only</option>
+          <option value="selected-remote">Selected content · remote</option>
+        </select>
+      </label>
+      <button id="build-pending-button" class="primary-action" type="button" ${disabled}>
+        ${disabled ? "Nothing waiting" : "Build next batch"}
       </button>
     </div>`;
 }

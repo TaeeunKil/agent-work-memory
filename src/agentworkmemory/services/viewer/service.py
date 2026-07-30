@@ -17,6 +17,8 @@ from agentworkmemory.services.viewer.models import (
     ViewerOverview,
     ViewerPage,
     ViewerPageDetail,
+    ViewerProject,
+    ViewerProjectDetail,
     ViewerSchedule,
     ViewerSession,
     ViewerSessionDetail,
@@ -143,6 +145,57 @@ class ViewerService:
             backlinks=tuple(viewer_page(item, 0) for item in backlinks),
         )
 
+    def projects(self) -> tuple[ViewerProject, ...]:
+        pages = self.wiki.pages()
+        backlinks = wiki_backlinks(pages)
+        projects: list[ViewerProject] = []
+        for project in sorted(
+            (page for page in pages if page.category == "projects"),
+            key=lambda page: page.title.casefold(),
+        ):
+            topics = project_topics(project, pages, backlinks)
+            projects.append(
+                ViewerProject(
+                    path=project.path,
+                    title=project.title,
+                    topic_count=len(topics),
+                    source_session_ids=project_source_session_ids(
+                        project,
+                        topics,
+                    ),
+                )
+            )
+        return tuple(projects)
+
+    def project(self, value: str) -> ViewerProjectDetail:
+        relative = safe_viewer_page_path(value)
+        pages = self.wiki.pages()
+        project = next(
+            (
+                page
+                for page in pages
+                if page.path == relative and page.category == "projects"
+            ),
+            None,
+        )
+        if project is None:
+            raise KeyError(f"unknown project page: {relative}")
+        topics = project_topics(project, pages, wiki_backlinks(pages))
+        source_ids = project_source_session_ids(project, topics)
+        sessions_by_id = {
+            session.session_id: session for session in self.sessions_service.list()
+        }
+        sessions = tuple(
+            self.session_summary(sessions_by_id[session_id])
+            for session_id in source_ids
+            if session_id in sessions_by_id
+        )
+        return ViewerProjectDetail(
+            page=self.page(relative.as_posix()),
+            topics=tuple(viewer_page(topic, 0) for topic in topics),
+            sessions=sessions,
+        )
+
     def session_summary(
         self,
         session: AgentSession,
@@ -237,4 +290,35 @@ def viewer_schedule(
         task=task,
         task_name=task_name,
         next_run_at=next_run_at,
+    )
+
+
+def project_topics(
+    project: WikiPage,
+    pages: tuple[WikiPage, ...],
+    backlinks: dict[Path, tuple[WikiPage, ...]],
+) -> tuple[WikiPage, ...]:
+    by_path = {page.path: page for page in pages}
+    related = {
+        page.path: page
+        for page in backlinks.get(project.path, ())
+        if page.path != project.path
+    }
+    for outgoing in project.outgoing_links:
+        page = by_path.get(outgoing)
+        if page is not None and page.path != project.path:
+            related[page.path] = page
+    return tuple(sorted(related.values(), key=lambda page: page.title.casefold()))
+
+
+def project_source_session_ids(
+    project: WikiPage,
+    topics: tuple[WikiPage, ...],
+) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            session_id
+            for page in (project, *topics)
+            for session_id in page.source_session_ids
+        )
     )
