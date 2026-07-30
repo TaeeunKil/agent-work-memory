@@ -41,6 +41,12 @@ Preserve uncertainty and distinguish observed results from proposed ideas.
 Add the supplied `[[inbox/agent-sessions/...|session title]]` link near the
 source citation so the owner can navigate back to the retained evidence.
 
+Never persist passwords, access tokens, API keys, private keys, session
+cookies, connection strings containing credentials, or raw authentication
+headers. If such a value appears in evidence, omit the value and record only
+the durable operational fact, using a neutral phrase such as "credential
+provided through the environment" when that context matters.
+
 Write concise factual prose. Do not copy full transcripts into durable pages.
 Do not create routine daily summaries. The session inbox already preserves the
 record.
