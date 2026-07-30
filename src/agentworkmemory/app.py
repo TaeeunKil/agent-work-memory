@@ -177,10 +177,16 @@ def create_app(
             YokeCuratorAdapter(
                 "codex",
                 resolved.state_dir / "curators" / "codex",
+                workspace_permission_repair=(
+                    vault.normalize_curator_workspace_permissions
+                ),
             ),
             YokeCuratorAdapter(
                 "claude",
                 resolved.state_dir / "curators" / "claude",
+                workspace_permission_repair=(
+                    vault.normalize_curator_workspace_permissions
+                ),
             ),
             OllamaCuratorAdapter(
                 ollama_url if ollama_url is not None else "http://127.0.0.1:11434"

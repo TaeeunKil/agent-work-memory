@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path, PureWindowsPath
 from typing import Any
@@ -55,11 +56,17 @@ Use an empty `files` array for a no-op. Do not write any other file.
 
 
 class YokeCuratorAdapter:
-    def __init__(self, runtime: str, runtime_root: Path):
+    def __init__(
+        self,
+        runtime: str,
+        runtime_root: Path,
+        workspace_permission_repair: Callable[[Path], None] | None = None,
+    ):
         if runtime not in {"codex", "claude"}:
             raise ValueError(f"unsupported Yoke curator runtime: {runtime}")
         self.runtime = runtime
         self.runtime_root = runtime_root
+        self.workspace_permission_repair = workspace_permission_repair
 
     def check(self) -> CuratorReadiness:
         readiness_root = self.runtime_root.parent / "readiness"
@@ -105,10 +112,17 @@ class YokeCuratorAdapter:
             if output_path is not None:
                 output_path.write_text('{"files":[]}\n', encoding="utf-8")
             surface = curator_surface(self.runtime, sys.platform)
-            run = self.harness(request.vault_path).run_sync(
-                request.prompt,
-                run_options(request, surface=surface),
-            )
+            try:
+                run = self.harness(request.vault_path).run_sync(
+                    request.prompt,
+                    run_options(request, surface=surface),
+                )
+            finally:
+                if (
+                    output_path is not None
+                    and self.workspace_permission_repair is not None
+                ):
+                    self.workspace_permission_repair(request.vault_path)
             status = CuratorRunStatus(str(run.status))
             if status is CuratorRunStatus.SUCCEEDED and output_path is not None:
                 apply_windows_curator_output(
