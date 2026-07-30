@@ -27,9 +27,9 @@ def is_distillation_candidate(
 def is_internal_workspace(cwd: Path | None, state_root: Path) -> bool:
     if cwd is None:
         return False
-    resolved = cwd.expanduser().resolve(strict=False)
+    resolved = normalized_workspace_path(cwd)
     try:
-        resolved.relative_to(state_root.expanduser().resolve(strict=False))
+        resolved.relative_to(normalized_workspace_path(state_root))
         return True
     except ValueError:
         pass
@@ -37,10 +37,18 @@ def is_internal_workspace(cwd: Path | None, state_root: Path) -> bool:
     return any(part in INTERNAL_WORKSPACE_PARTS for part in parts)
 
 
+def normalized_workspace_path(path: Path) -> Path:
+    expanded = path.expanduser()
+    try:
+        return expanded.resolve(strict=False)
+    except OSError:
+        return expanded.absolute()
+
+
 def same_workspace(left: AgentSession, right: AgentSession) -> bool:
     if left.cwd is None or right.cwd is None:
         return left.session_id == right.session_id
     return (
-        str(left.cwd.expanduser().resolve(strict=False)).casefold()
-        == str(right.cwd.expanduser().resolve(strict=False)).casefold()
+        str(normalized_workspace_path(left.cwd)).casefold()
+        == str(normalized_workspace_path(right.cwd)).casefold()
     )

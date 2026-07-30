@@ -115,6 +115,37 @@ def test_collection_skips_awm_internal_workspaces(tmp_path: Path):
     assert app.sessions.list() == ()
 
 
+def test_collection_keeps_session_when_recorded_workspace_is_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+):
+    app = isolated_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    unavailable = tmp_path / "unavailable-wsl-workspace"
+    write_codex_transcript(home, unavailable)
+    original_resolve = Path.resolve
+
+    def resolve_unless_unavailable(path: Path, strict: bool = False) -> Path:
+        if path == unavailable:
+            raise OSError("recorded workspace is offline")
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve_unless_unavailable)
+
+    receipt = app.collect.collect(
+        CollectAgentRecords(
+            providers=(AgentProvider.CODEX,),
+            home=home,
+            include_content=True,
+        )
+    )
+
+    assert receipt.sessions_discovered == 1
+    assert receipt.events_added == 2
+    assert app.sessions.get(receipt.session_ids[0]).cwd == unavailable
+
+
 def test_metadata_collection_can_later_import_content(tmp_path: Path):
     app = isolated_app(tmp_path)
     vault = app.vault.initialize(tmp_path / "vault")
