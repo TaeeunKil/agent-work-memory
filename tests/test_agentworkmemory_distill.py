@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -380,8 +381,8 @@ def test_windows_yoke_curator_uses_standalone_codex_cli(
     vault.mkdir()
     adapter = YokeCuratorAdapter("codex", tmp_path / "state/curators/codex")
     monkeypatch.setattr(
-        "agentworkmemory.integrations.curators.yoke.sys.platform",
-        "win32",
+        "agentworkmemory.integrations.curators.yoke.sys",
+        SimpleNamespace(platform="win32"),
     )
 
     assert curator_surface("codex", "win32") == "codex_cli"
