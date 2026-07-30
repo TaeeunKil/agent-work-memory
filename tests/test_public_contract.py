@@ -143,6 +143,8 @@ def test_public_entry_points_include_ca_alias():
     assert scripts == {
         "ca": "codealmanac.cli.main:main",
         "codealmanac": "codealmanac.cli.main:main",
+        "wa": "workalmanac.cli:main",
+        "workalmanac": "workalmanac.cli:main",
     }
 
 
