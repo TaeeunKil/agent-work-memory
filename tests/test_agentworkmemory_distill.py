@@ -9,6 +9,7 @@ import pytest
 
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import main
+from agentworkmemory.integrations.curators import yoke as yoke_curator
 from agentworkmemory.integrations.curators.hidden_codex import hidden_run_command
 from agentworkmemory.integrations.curators.yoke import (
     YokeCuratorAdapter,
@@ -592,11 +593,48 @@ def test_windows_yoke_repairs_handoff_permissions_before_reading(
     )
 
     assert result.status is CuratorRunStatus.SUCCEEDED
-    assert repair_calls == [vault]
+    assert repair_calls == [vault, vault]
     assert (vault / "systems/repaired-handoff.md").read_text(
         encoding="utf-8"
     ) == "# Repaired handoff\n"
     assert not (vault / ".awm-curator-output.json").exists()
+
+
+def test_windows_handoff_read_repairs_and_retries_sharing_violation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    handoff = vault / yoke_curator.WINDOWS_CURATOR_OUTPUT
+    handoff.write_text('{"files":[]}\n', encoding="utf-8")
+    original_read_text = Path.read_text
+    attempts = 0
+    repairs = []
+
+    def read_text(path: Path, *args, **kwargs):
+        nonlocal attempts
+        if path == handoff:
+            attempts += 1
+            if attempts == 1:
+                error = OSError("handoff is still releasing")
+                error.winerror = 32
+                raise error
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(yoke_curator.os, "name", "nt")
+    monkeypatch.setattr(Path, "read_text", read_text)
+    monkeypatch.setattr(yoke_curator.time, "sleep", lambda _delay: None)
+
+    raw = yoke_curator.read_windows_curator_output(
+        handoff,
+        vault_path=vault,
+        permission_repair=repairs.append,
+    )
+
+    assert raw == '{"files":[]}\n'
+    assert attempts == 2
+    assert repairs == [vault, vault]
 
 
 @pytest.mark.parametrize(

@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path, PureWindowsPath
@@ -39,6 +40,8 @@ from agentworkmemory.services.curators.models import (
 CLAUDE_WIKI_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep", "LS")
 CURATOR_TIMEOUT_SECONDS = 30 * 60
 WINDOWS_CURATOR_OUTPUT = ".awm-curator-output.json"
+WINDOWS_HANDOFF_READ_ATTEMPTS = 100
+WINDOWS_HANDOFF_READ_DELAY_SECONDS = 0.1
 WINDOWS_CODEX_WRITE_INSTRUCTIONS = """
 
 ## Windows file handoff
@@ -127,7 +130,11 @@ class YokeCuratorAdapter:
             if status is CuratorRunStatus.SUCCEEDED and output_path is not None:
                 apply_windows_curator_output(
                     request.vault_path,
-                    output_path.read_text(encoding="utf-8"),
+                    read_windows_curator_output(
+                        output_path,
+                        vault_path=request.vault_path,
+                        permission_repair=self.workspace_permission_repair,
+                    ),
                 )
         except (
             OSError,
@@ -242,6 +249,28 @@ def apply_windows_curator_output(vault_path: Path, raw: str) -> tuple[Path, ...]
         seen.add(relative)
         written.append(relative)
     return tuple(written)
+
+
+def read_windows_curator_output(
+    output_path: Path,
+    *,
+    vault_path: Path,
+    permission_repair: Callable[[Path], None] | None,
+) -> str:
+    for attempt in range(WINDOWS_HANDOFF_READ_ATTEMPTS):
+        if permission_repair is not None:
+            permission_repair(vault_path)
+        try:
+            return output_path.read_text(encoding="utf-8")
+        except OSError as error:
+            if (
+                os.name != "nt"
+                or getattr(error, "winerror", None) not in {5, 32}
+                or attempt == WINDOWS_HANDOFF_READ_ATTEMPTS - 1
+            ):
+                raise
+            time.sleep(WINDOWS_HANDOFF_READ_DELAY_SECONDS)
+    raise AssertionError("unreachable")
 
 
 def standalone_codex_executable() -> str:

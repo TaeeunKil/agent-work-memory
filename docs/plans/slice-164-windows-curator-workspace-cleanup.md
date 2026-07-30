@@ -17,10 +17,16 @@ cleanup explicitly:
 4. defer a still-locked disposable directory instead of replacing the
    curator's durable result or original error with a cleanup error.
 
+The Windows Codex adapter applies the same bounded sharing-violation retry
+while reading its structured handoff. Each retry repairs the Vault ACL again
+before reading, covering sandbox helper handles that briefly outlive the main
+Codex process.
+
 ## Invariants
 
 - Cleanup runs after every successful or failed curator attempt.
 - A transient directory lock is retried without opening a console window.
+- A transient handoff read lock is repaired and retried before parsing JSON.
 - A persistent Windows sharing lock can leave a disposable directory for a
   later cleanup pass, but cannot turn a curator result into a failed receipt.
 - Non-Windows cleanup keeps the same direct `rmtree` behavior.
