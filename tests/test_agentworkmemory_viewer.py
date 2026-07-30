@@ -386,6 +386,21 @@ def test_viewer_exposes_clickable_scheduled_activity_data(tmp_path: Path):
     assert "source_path" not in response.text
 
 
+def test_viewer_live_activity_log_preserves_end_aware_scrolling(tmp_path: Path):
+    app, _ = viewer_fixture(tmp_path)
+    client = TestClient(create_viewer_app(app))
+
+    javascript = client.get("/assets/app.js")
+
+    assert javascript.status_code == 200
+    assert "data-live-log" in javascript.text
+    assert "captureEndAwareScroll(activityInspector)" in javascript.text
+    assert "restoreEndAwareScroll(activityInspector, inspectorScroll)" in (
+        javascript.text
+    )
+    assert "distanceFromEnd <= 24" in javascript.text
+
+
 def test_serve_cli_uses_loopback_viewer_runner(tmp_path: Path, monkeypatch):
     app, _ = viewer_fixture(tmp_path)
     calls: list[tuple[int, bool]] = []

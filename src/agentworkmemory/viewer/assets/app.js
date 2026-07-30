@@ -11,6 +11,7 @@ const state = {
 };
 
 const workspace = document.querySelector("#workspace");
+const activityInspector = document.querySelector("#inspector");
 const inspector = document.querySelector("#inspector-content");
 const syncButton = document.querySelector("#sync-button");
 const buildWikiButton = document.querySelector("#build-wiki-button");
@@ -361,6 +362,13 @@ function bindActivityRows() {
 function openScheduledActivity(activityId) {
   const run = state.activity.find((item) => item.activity_id === activityId);
   if (!run) return;
+  const isRefreshingSelection = state.selectedActivityId === activityId;
+  const inspectorScroll = isRefreshingSelection
+    ? captureEndAwareScroll(activityInspector)
+    : null;
+  const logScroll = isRefreshingSelection
+    ? captureEndAwareScroll(inspector.querySelector("[data-live-log]"))
+    : null;
   state.selectedActivityId = activityId;
   document.body.classList.add("has-inspector");
   const finished = run.finished_at || new Date().toISOString();
@@ -382,9 +390,31 @@ function openScheduledActivity(activityId) {
         <p class="eyebrow">Recent log</p>
         <span>${run.log_lines.length} lines</span>
       </div>
-      <pre>${escapeHtml(run.log_lines.join("\n") || "Waiting for the first log line...")}</pre>
+      <pre data-live-log>${escapeHtml(run.log_lines.join("\n") || "Waiting for the first log line...")}</pre>
     </section>
   `;
+  restoreEndAwareScroll(
+    inspector.querySelector("[data-live-log]"),
+    logScroll,
+  );
+  restoreEndAwareScroll(activityInspector, inspectorScroll);
+}
+
+function captureEndAwareScroll(element) {
+  if (!element) return null;
+  const distanceFromEnd =
+    element.scrollHeight - element.clientHeight - element.scrollTop;
+  return {
+    followsEnd: distanceFromEnd <= 24,
+    scrollTop: element.scrollTop,
+  };
+}
+
+function restoreEndAwareScroll(element, snapshot) {
+  if (!element) return;
+  element.scrollTop = snapshot && !snapshot.followsEnd
+    ? snapshot.scrollTop
+    : element.scrollHeight;
 }
 
 function openReceipt(runId, type) {
