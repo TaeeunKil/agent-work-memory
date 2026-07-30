@@ -9,6 +9,7 @@ from agentworkmemory.services.sessions.models import AgentEvent, AgentProviderId
 class DiscoveredAgentSession(AgentWorkMemoryModel):
     provider: AgentProviderId
     provider_session_id: str
+    title: str | None = None
     cwd: Path | None
     source_path: Path
     modified_at: datetime

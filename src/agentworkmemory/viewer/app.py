@@ -16,6 +16,7 @@ from agentworkmemory.services.distillation.models import DistillReceipt
 from agentworkmemory.services.distillation.outcomes import (
     summarize_session_outcomes,
 )
+from agentworkmemory.services.sessions.models import LOCAL_TRANSCRIPT_PROVIDERS
 from agentworkmemory.workflows.distill import DistillSessions
 from agentworkmemory.workflows.distill.coordination import (
     DistillationAlreadyRunning,
@@ -30,7 +31,7 @@ ASSET_TYPES = {
 
 
 class ViewerSyncRequest(AgentWorkMemoryModel):
-    providers: tuple[str, ...] = ("codex", "claude")
+    providers: tuple[str, ...] = LOCAL_TRANSCRIPT_PROVIDERS
     include_content: bool = False
     home: Path = Field(default_factory=Path.home)
 

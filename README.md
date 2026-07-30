@@ -12,7 +12,6 @@ problems, procedures, projects, and unfinished work.
 ```powershell
 git clone https://github.com/TaeeunKil/agent-work-memory.git
 cd agent-work-memory
-git switch codex/agent-work-memory
 uv tool install --editable . --force
 awm --help
 ```
@@ -33,7 +32,7 @@ sync retains evidence only and never invokes a model.
 ## Daily use
 
 ```powershell
-awm sync --from codex --from claude --include-content
+awm sync --from codex --from claude --from cursor --include-content
 awm sessions
 awm search "why we chose sqlite"
 awm serve
@@ -42,7 +41,7 @@ awm serve
 The viewer binds only to `127.0.0.1` and provides four working surfaces:
 
 - **Today** — retained sessions, durable Wiki pages, and pending distillation
-- **Sessions** — evidence from Codex, Claude, imports, and manual notes
+- **Sessions** — evidence from Codex, Claude, Cursor, imports, and manual notes
 - **Knowledge** — durable Markdown promoted from selected evidence
 - **Activity** — running work, next scheduled work, receipts, and logs
 
@@ -78,6 +77,15 @@ awm remote sync ovion-dev-157 --include-content
 
 AWM uses existing OpenSSH configuration and keys, reads bounded transcript
 manifests, and does not write to remote machines.
+
+## Cursor records
+
+Local sync reads Cursor Composer sessions from Cursor's local SQLite store,
+including conversations attached to local, WSL, and SSH workspaces. Codex used
+through the Cursor Codex extension still writes the standard `.codex` session
+store and is collected by the `codex` provider, so AWM does not duplicate it as
+a Cursor Composer session. Claude tools that write the standard `.claude`
+store follow the same rule.
 
 ## Local data
 
