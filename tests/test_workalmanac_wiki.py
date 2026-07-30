@@ -5,6 +5,7 @@ import pytest
 from workalmanac.app import create_app
 from workalmanac.cli import main
 from workalmanac.services.curators.models import ContentAccess
+from workalmanac.services.vault import service as vault_service
 from workalmanac.services.vault import snapshot as vault_snapshot
 from workalmanac.settings import WorkAlmanacConfig
 from workalmanac.workflows.distill.prompt import distill_prompt
@@ -152,6 +153,39 @@ def test_vault_read_reports_a_locked_filename_without_a_traceback_path(
         vault_snapshot.read_vault_bytes(page)
 
     assert str(page.parent) not in str(raised.value)
+
+
+def test_windows_curator_workspace_acl_is_reset_without_a_console(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+
+    monkeypatch.setattr(vault_service.os, "name", "nt")
+    monkeypatch.setattr(vault_service.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        vault_service.subprocess,
+        "CREATE_NO_WINDOW",
+        0x08000000,
+        raising=False,
+    )
+
+    vault_service.normalize_workspace_permissions(tmp_path / "vault")
+
+    assert captured["command"] == (
+        "icacls",
+        str(tmp_path / "vault"),
+        "/reset",
+        "/T",
+        "/C",
+        "/Q",
+    )
+    assert captured["check"] is False
+    assert captured["creationflags"] == 0x08000000
 
 
 def test_distill_prompt_supplies_navigable_session_link(tmp_path: Path):
