@@ -390,7 +390,7 @@ function openScheduledActivity(activityId) {
         <p class="eyebrow">Recent log</p>
         <span>${run.log_lines.length} lines</span>
       </div>
-      <pre data-live-log>${escapeHtml(run.log_lines.join("\n") || "Waiting for the first log line...")}</pre>
+      <pre data-live-log tabindex="0" aria-label="Recent activity log">${escapeHtml(run.log_lines.join("\n") || "Waiting for the first log line...")}</pre>
     </section>
   `;
   restoreEndAwareScroll(

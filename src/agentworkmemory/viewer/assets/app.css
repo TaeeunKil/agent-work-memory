@@ -848,6 +848,51 @@ body.has-inspector .inspector {
   word-break: break-word;
 }
 
+.inspector,
+.activity-log pre {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.inspector:hover,
+.inspector:focus-within,
+.activity-log pre:hover,
+.activity-log pre:focus {
+  scrollbar-color: rgba(242, 239, 231, .34) transparent;
+}
+
+.inspector::-webkit-scrollbar,
+.activity-log pre::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.inspector::-webkit-scrollbar-track,
+.activity-log pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.inspector::-webkit-scrollbar-thumb,
+.activity-log pre::-webkit-scrollbar-thumb {
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: padding-box;
+}
+
+.inspector:hover::-webkit-scrollbar-thumb,
+.inspector:focus-within::-webkit-scrollbar-thumb,
+.activity-log pre:hover::-webkit-scrollbar-thumb,
+.activity-log pre:focus::-webkit-scrollbar-thumb {
+  background-color: rgba(242, 239, 231, .34);
+}
+
+.inspector:hover::-webkit-scrollbar-thumb:hover,
+.activity-log pre:hover::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(242, 239, 231, .58);
+}
+
 .empty,
 .loading {
   padding: 70px 0;
