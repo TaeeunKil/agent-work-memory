@@ -14,6 +14,7 @@ from workalmanac.integrations.transcripts import (
     ClaudeTranscriptCollector,
     CodexTranscriptCollector,
 )
+from workalmanac.services.activity import ActivityService
 from workalmanac.services.auto_distillation.ports import (
     AutoDistillSchedulerAdapter,
 )
@@ -56,6 +57,7 @@ class WorkAlmanac:
         self,
         *,
         automation: AutomationService,
+        activity: ActivityService,
         auto_distillation: AutoDistillationService,
         auto_distill: AutoDistillWorkflow,
         sessions: SessionsService,
@@ -77,6 +79,7 @@ class WorkAlmanac:
         wiki: WikiCatalogService,
     ):
         self.automation = automation
+        self.activity = activity
         self.auto_distillation = auto_distillation
         self.auto_distill = auto_distill
         self.sessions = sessions
@@ -134,6 +137,7 @@ def create_app(
     synchronization = SynchronizationService(
         SynchronizationStore(resolved.database_path)
     )
+    activity = ActivityService(resolved.state_dir / "activity")
     viewer = ViewerService(sessions, vault, wiki, synchronization)
     sync = SyncAgentRecordsWorkflow(
         collect,
@@ -200,6 +204,7 @@ def create_app(
     )
     return WorkAlmanac(
         automation=automation,
+        activity=activity,
         auto_distillation=auto_distillation,
         auto_distill=auto_distill,
         sessions=sessions,

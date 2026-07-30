@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from workalmanac.app import create_app
 from workalmanac.cli import build_parser, dispatch
+from workalmanac.services.activity import ActivityTask
 from workalmanac.services.curators.models import (
     CuratorReadiness,
     CuratorRunRequest,
@@ -143,6 +144,26 @@ def test_viewer_exposes_runtime_readiness_without_credentials(tmp_path: Path):
             "repair": None,
         }
     ]
+
+
+def test_viewer_exposes_clickable_scheduled_activity_data(tmp_path: Path):
+    app, _ = viewer_fixture(tmp_path)
+    run = app.activity.begin(
+        ActivityTask.SYNC,
+        process_id=1234,
+    )
+    app.activity.append_log(run, "Collecting SSH transcripts")
+    client = TestClient(create_viewer_app(app))
+
+    response = client.get("/api/activity")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["activity_id"] == run.activity_id
+    assert payload[0]["status"] == "running"
+    assert payload[0]["summary"] == "Collecting SSH transcripts"
+    assert payload[0]["log_lines"] == ["Collecting SSH transcripts"]
+    assert "source_path" not in response.text
 
 
 def test_serve_cli_uses_loopback_viewer_runner(tmp_path: Path, monkeypatch):

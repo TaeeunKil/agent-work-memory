@@ -4,6 +4,8 @@ const state = {
   sessions: [],
   pages: [],
   receipts: { sync: [], distill: [] },
+  activity: [],
+  selectedActivityId: null,
 };
 
 const workspace = document.querySelector("#workspace");
@@ -23,12 +25,19 @@ window.addEventListener("hashchange", openHashTarget);
 boot();
 
 async function boot() {
+  window.setInterval(refreshActivity, 2000);
   try {
+    await refreshActivity();
     await refreshData();
     render();
     openHashTarget();
   } catch (error) {
-    workspace.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+    state.view = "activity";
+    document.querySelectorAll(".nav-item").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.view === "activity");
+    });
+    renderActivity();
+    showToast(`Vault data is busy. Activity remains live.`);
   }
 }
 
@@ -43,10 +52,36 @@ async function refreshData() {
   state.sessions = sessions;
   state.pages = pages;
   state.receipts = receipts;
-  const lastSync = overview.last_sync_at
-    ? `Synced ${relativeTime(overview.last_sync_at)}`
-    : "Local vault";
-  document.querySelector("#rail-status").textContent = lastSync;
+  updateRailStatus();
+}
+
+async function refreshActivity() {
+  try {
+    state.activity = await api("/api/activity");
+    updateRailStatus();
+    if (state.view === "activity") {
+      renderActivity();
+      if (state.selectedActivityId) {
+        openScheduledActivity(state.selectedActivityId);
+      }
+    }
+  } catch {
+    // Keep the last known activity snapshot while the local viewer recovers.
+  }
+}
+
+function updateRailStatus() {
+  const running = state.activity.find((run) => run.status === "running");
+  const label = running
+    ? `${activityTaskLabel(running.task)} running`
+    : state.overview?.last_sync_at
+      ? `Synced ${relativeTime(state.overview.last_sync_at)}`
+      : "Local vault";
+  document.querySelector("#rail-status").textContent = label;
+  document.querySelector(".status-dot").classList.toggle(
+    "is-running",
+    Boolean(running),
+  );
 }
 
 function setView(view) {
@@ -55,6 +90,7 @@ function setView(view) {
     button.classList.toggle("is-active", button.dataset.view === view);
   });
   render();
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function render() {
@@ -138,23 +174,39 @@ function renderKnowledge(category = null) {
 }
 
 function renderActivity() {
-  const lines = [
+  const receipts = [
     ...state.receipts.sync.map((receipt) => ({ ...receipt, type: "sync" })),
     ...state.receipts.distill.map((receipt) => ({ ...receipt, type: "distill" })),
   ].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+  const active = state.activity.filter((run) => run.status === "running").length;
   workspace.innerHTML = `
     <header class="view-header">
       <div>
         <p class="eyebrow">Local operations</p>
         <h1>Activity</h1>
       </div>
-      <p class="quiet">Body-free receipts for synchronization and Wiki distillation.</p>
+      <p class="quiet">Scheduled work from start to finish. Select a row to inspect its timeline and recent log.</p>
     </header>
+    <section class="activity-live">
+      <div class="activity-live-count">
+        <strong>${active}</strong>
+        <span>running now</span>
+      </div>
+      <div>
+        <p class="eyebrow">Scheduler</p>
+        <p>${active ? "Work is moving in the background." : "No scheduled operation is running."}</p>
+      </div>
+    </section>
     <section class="section-block">
-      ${sectionHeading("Recent runs", `${lines.length} retained`)}
-      <div>${lines.map(activityLine).join("") || emptyRow("No activity yet.")}</div>
+      ${sectionHeading("Scheduled operations", `${state.activity.length} retained`)}
+      <div class="activity-list">${state.activity.map(scheduledActivityRow).join("") || emptyRow("The next scheduled run will appear here.")}</div>
+    </section>
+    <section class="section-block">
+      ${sectionHeading("Run receipts", `${receipts.length} retained`)}
+      <div class="activity-list">${receipts.map(activityLine).join("") || emptyRow("No completed receipts yet.")}</div>
     </section>
   `;
+  bindActivityRows();
 }
 
 function categoryGrid() {
@@ -227,6 +279,73 @@ async function openPage(path) {
 
 function closeInspector() {
   document.body.classList.remove("has-inspector");
+  state.selectedActivityId = null;
+}
+
+function bindActivityRows() {
+  document.querySelectorAll("[data-activity]").forEach((row) => {
+    row.addEventListener("click", () => openScheduledActivity(row.dataset.activity));
+  });
+  document.querySelectorAll("[data-receipt]").forEach((row) => {
+    row.addEventListener("click", () => {
+      openReceipt(row.dataset.receipt, row.dataset.type);
+    });
+  });
+}
+
+function openScheduledActivity(activityId) {
+  const run = state.activity.find((item) => item.activity_id === activityId);
+  if (!run) return;
+  state.selectedActivityId = activityId;
+  document.body.classList.add("has-inspector");
+  const finished = run.finished_at || new Date().toISOString();
+  inspector.innerHTML = `
+    <p class="eyebrow">${escapeHtml(activityTaskLabel(run.task))}</p>
+    <h2>${escapeHtml(activityStatusLabel(run.status))}</h2>
+    <div class="inspector-meta">
+      <span>Started ${escapeHtml(formatMoment(run.started_at))}</span>
+      <span>${run.finished_at ? `Ended ${escapeHtml(formatMoment(run.finished_at))}` : "In progress"}</span>
+      <span>${escapeHtml(durationBetween(run.started_at, finished))}</span>
+    </div>
+    <div class="activity-timeline">
+      ${timelineStep("Started", run.started_at, true)}
+      ${timelineStep(run.summary, run.finished_at || "Now", run.status !== "failed", run.status === "running")}
+      ${run.finished_at ? timelineStep(activityStatusLabel(run.status), run.finished_at, run.status === "succeeded") : ""}
+    </div>
+    <section class="activity-log">
+      <div class="activity-log-heading">
+        <p class="eyebrow">Recent log</p>
+        <span>${run.log_lines.length} lines</span>
+      </div>
+      <pre>${escapeHtml(run.log_lines.join("\n") || "Waiting for the first log line...")}</pre>
+    </section>
+  `;
+}
+
+function openReceipt(runId, type) {
+  const collection = type === "sync"
+    ? state.receipts.sync
+    : state.receipts.distill;
+  const receipt = collection.find((item) => item.run_id === runId);
+  if (!receipt) return;
+  state.selectedActivityId = null;
+  document.body.classList.add("has-inspector");
+  const changed = receipt.changed_files
+    ? `${receipt.changed_files.length} Wiki files`
+    : `${receipt.events_added} new events`;
+  inspector.innerHTML = `
+    <p class="eyebrow">${escapeHtml(activityTaskLabel(type))} receipt</p>
+    <h2>${escapeHtml(activityStatusLabel(receipt.status))}</h2>
+    <div class="inspector-meta">
+      <span>${escapeHtml(receipt.run_id)}</span>
+      <span>${escapeHtml(changed)}</span>
+      <span>${escapeHtml(durationBetween(receipt.started_at, receipt.finished_at))}</span>
+    </div>
+    <div class="activity-timeline">
+      ${timelineStep("Started", receipt.started_at, true)}
+      ${timelineStep(activityStatusLabel(receipt.status), receipt.finished_at, receipt.status === "succeeded")}
+    </div>
+  `;
 }
 
 async function search(event) {
@@ -399,13 +518,83 @@ function distillControls(sessionId) {
 }
 
 function activityLine(receipt) {
-  const changed = receipt.changed_files ? `${receipt.changed_files.length} files` : `${receipt.events_added} events`;
+  const changed = receipt.changed_files
+    ? `${receipt.changed_files.length} files`
+    : `${receipt.events_added} events`;
   return `
-    <div class="activity-line">
-      <strong>${escapeHtml(receipt.type)}</strong>
-      <code>${escapeHtml(receipt.run_id)}</code>
-      <span>${escapeHtml(receipt.status)} · ${changed} · ${relativeTime(receipt.started_at)}</span>
+    <button class="activity-row" type="button" data-receipt="${escapeHtml(receipt.run_id)}" data-type="${escapeHtml(receipt.type)}">
+      <span class="activity-state is-${escapeHtml(receipt.status)}" aria-hidden="true"></span>
+      <span>
+        <strong>${escapeHtml(activityTaskLabel(receipt.type))}</strong>
+        <span class="activity-summary">${escapeHtml(receipt.run_id)}</span>
+      </span>
+      <span class="activity-when">${escapeHtml(activityStatusLabel(receipt.status))} · ${changed}<br>${relativeTime(receipt.started_at)}</span>
+    </button>`;
+}
+
+function scheduledActivityRow(run) {
+  return `
+    <button class="activity-row ${run.status === "running" ? "is-running" : ""}" type="button" data-activity="${escapeHtml(run.activity_id)}">
+      <span class="activity-state is-${escapeHtml(run.status)}" aria-hidden="true"></span>
+      <span>
+        <strong>${escapeHtml(activityTaskLabel(run.task))}</strong>
+        <span class="activity-summary">${escapeHtml(run.summary)}</span>
+      </span>
+      <span class="activity-when">${escapeHtml(activityStatusLabel(run.status))}<br>${relativeTime(run.started_at)}</span>
+    </button>`;
+}
+
+function timelineStep(label, moment, completed, current = false) {
+  return `
+    <div class="timeline-step ${completed ? "is-complete" : "is-failed"} ${current ? "is-current" : ""}">
+      <span class="timeline-marker" aria-hidden="true"></span>
+      <span>
+        <strong>${escapeHtml(label)}</strong>
+        <small>${moment === "Now" ? "Now" : escapeHtml(formatMoment(moment))}</small>
+      </span>
     </div>`;
+}
+
+function activityTaskLabel(value) {
+  const labels = {
+    sync: "Transcript sync",
+    "auto-distill": "Wiki distillation",
+    distill: "Wiki distillation",
+  };
+  return labels[value] || value;
+}
+
+function activityStatusLabel(value) {
+  const labels = {
+    running: "Running",
+    succeeded: "Completed",
+    skipped: "Skipped",
+    failed: "Failed",
+    skipped_locked: "Skipped",
+  };
+  return labels[value] || value;
+}
+
+function formatMoment(value) {
+  if (!value) return "Not finished";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
+}
+
+function durationBetween(start, finish) {
+  if (!start || !finish) return "Duration unavailable";
+  const seconds = Math.max(
+    0,
+    Math.round((new Date(finish) - new Date(start)) / 1000),
+  );
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes ? `${minutes}m ${remainder}s` : `${remainder}s`;
 }
 
 function emptyRow(message) {
