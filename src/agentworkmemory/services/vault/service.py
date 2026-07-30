@@ -202,8 +202,12 @@ def remove_curator_workspace(root: Path) -> None:
             return
         except FileNotFoundError:
             return
-        except PermissionError:
-            if attempt == WORKSPACE_CLEANUP_ATTEMPTS - 1:
+        except OSError as error:
+            if (
+                os.name != "nt"
+                or getattr(error, "winerror", None) not in {5, 32}
+                or attempt == WORKSPACE_CLEANUP_ATTEMPTS - 1
+            ):
                 raise
             time.sleep(WORKSPACE_CLEANUP_DELAY_SECONDS)
 

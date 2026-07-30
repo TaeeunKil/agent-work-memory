@@ -222,9 +222,12 @@ def test_curator_workspace_cleanup_repairs_permissions_and_retries_lock(
         nonlocal remove_attempts
         remove_attempts += 1
         if remove_attempts == 1:
-            raise PermissionError("directory is still releasing")
+            error = OSError("directory is still releasing")
+            error.winerror = 32
+            raise error
         path.rmdir()
 
+    monkeypatch.setattr(vault_service.os, "name", "nt")
     monkeypatch.setattr(vault_service, "normalize_workspace_permissions", repair)
     monkeypatch.setattr(vault_service.shutil, "rmtree", remove)
     monkeypatch.setattr(vault_service.time, "sleep", lambda _delay: None)
