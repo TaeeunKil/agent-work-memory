@@ -36,7 +36,7 @@ DURABLE_DIRECTORIES = frozenset(
 )
 CATALOG_DIRECTORIES = DURABLE_DIRECTORIES | {"imports"}
 CURATOR_IGNORED_ROOTS = frozenset({"inbox"})
-WORKSPACE_CLEANUP_ATTEMPTS = 20
+WORKSPACE_CLEANUP_ATTEMPTS = 100
 WORKSPACE_CLEANUP_DELAY_SECONDS = 0.1
 
 
@@ -206,9 +206,10 @@ def remove_curator_workspace(root: Path) -> None:
             if (
                 os.name != "nt"
                 or getattr(error, "winerror", None) not in {5, 32}
-                or attempt == WORKSPACE_CLEANUP_ATTEMPTS - 1
             ):
                 raise
+            if attempt == WORKSPACE_CLEANUP_ATTEMPTS - 1:
+                return
             time.sleep(WORKSPACE_CLEANUP_DELAY_SECONDS)
 
 

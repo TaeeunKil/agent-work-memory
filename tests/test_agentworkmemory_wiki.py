@@ -238,6 +238,33 @@ def test_curator_workspace_cleanup_repairs_permissions_and_retries_lock(
     assert remove_attempts == 2
 
 
+def test_curator_workspace_cleanup_defers_persistent_windows_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    workspace = tmp_path / "distill-test"
+    workspace.mkdir()
+
+    def locked(_path: Path) -> None:
+        error = OSError("directory is still releasing")
+        error.winerror = 32
+        raise error
+
+    monkeypatch.setattr(vault_service.os, "name", "nt")
+    monkeypatch.setattr(vault_service, "WORKSPACE_CLEANUP_ATTEMPTS", 2)
+    monkeypatch.setattr(
+        vault_service,
+        "normalize_workspace_permissions",
+        lambda _path: None,
+    )
+    monkeypatch.setattr(vault_service.shutil, "rmtree", locked)
+    monkeypatch.setattr(vault_service.time, "sleep", lambda _delay: None)
+
+    vault_service.remove_curator_workspace(workspace)
+
+    assert workspace.is_dir()
+
+
 def test_distill_prompt_supplies_navigable_session_link(tmp_path: Path):
     app = wiki_app(tmp_path)
     app.vault.initialize(tmp_path / "vault")
