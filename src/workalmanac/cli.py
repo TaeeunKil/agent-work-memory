@@ -1,8 +1,12 @@
 import argparse
 import sys
-from collections.abc import Sequence
+import threading
+import time
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TextIO
 
 from workalmanac.app import WorkAlmanac, create_app
 from workalmanac.services.auto_distillation.models import AutoDistillSettings
@@ -272,7 +276,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     try:
         return dispatch(args, app)
-    except (KeyError, RuntimeError, ValueError) as error:
+    except (KeyError, OSError, RuntimeError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
@@ -587,7 +591,12 @@ def dispatch_auto_distill(args: argparse.Namespace, app: WorkAlmanac) -> int:
         return 0
     if args.auto_distill_command == "run":
         app.vault.require_path()
-        receipt = app.auto_distill.run()
+        settings = app.auto_distillation.settings()
+        with foreground_progress(
+            "Automatic distillation started. "
+            f"Waiting for {settings.runtime}; this can take several minutes."
+        ):
+            receipt = app.auto_distill.run()
         if receipt.state is AutoDistillRunState.EMPTY:
             print("No captured sessions are waiting to be distilled.")
         elif receipt.state is AutoDistillRunState.GRANT_EXHAUSTED:
@@ -613,6 +622,60 @@ def dispatch_auto_distill(args: argparse.Namespace, app: WorkAlmanac) -> int:
     raise ValueError(
         f"unsupported auto-distill command: {args.auto_distill_command}"
     )
+
+
+@contextmanager
+def foreground_progress(
+    message: str,
+    *,
+    stream: TextIO | None = None,
+) -> Iterator[None]:
+    output = stream or sys.stderr
+    started_at = time.monotonic()
+    stop = threading.Event()
+    interactive = output.isatty()
+    print(message, file=output, flush=True)
+
+    def render_elapsed() -> None:
+        frames = "|/-\\"
+        frame = 0
+        while not stop.wait(1):
+            elapsed = format_elapsed(time.monotonic() - started_at)
+            print(
+                f"\r{frames[frame % len(frames)]} Codex is working "
+                f"· elapsed {elapsed} · percentage unavailable",
+                end="",
+                file=output,
+                flush=True,
+            )
+            frame += 1
+
+    worker = None
+    if interactive:
+        worker = threading.Thread(target=render_elapsed, daemon=True)
+        worker.start()
+    completed = False
+    try:
+        yield
+        completed = True
+    finally:
+        stop.set()
+        if worker is not None:
+            worker.join(timeout=1)
+        elapsed = format_elapsed(time.monotonic() - started_at)
+        prefix = "\r" if interactive else ""
+        state = "finished" if completed else "stopped"
+        print(
+            f"{prefix}Codex step {state} after {elapsed}.",
+            file=output,
+            flush=True,
+        )
+
+
+def format_elapsed(seconds: float) -> str:
+    total = max(0, int(seconds))
+    minutes, remaining = divmod(total, 60)
+    return f"{minutes:02d}:{remaining:02d}"
 
 
 def dispatch_remote(args: argparse.Namespace, app: WorkAlmanac) -> int:

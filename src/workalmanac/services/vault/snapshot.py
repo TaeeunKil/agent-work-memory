@@ -1,7 +1,10 @@
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 MAX_SNAPSHOT_BYTES = 50 * 1024 * 1024
+FILE_READ_ATTEMPTS = 20
+FILE_READ_DELAY_SECONDS = 0.1
 
 
 @dataclass(frozen=True)
@@ -22,7 +25,7 @@ class VaultSnapshot:
         total_bytes = 0
         for path in vault_files(resolved_root, ignored_roots=ignored_roots):
             relative = path.relative_to(resolved_root)
-            content = path.read_bytes()
+            content = read_vault_bytes(path)
             total_bytes += len(content)
             if total_bytes > MAX_SNAPSHOT_BYTES:
                 raise ValueError(
@@ -38,7 +41,7 @@ class VaultSnapshot:
 
     def changed_files(self) -> tuple[Path, ...]:
         current = {
-            path.relative_to(self.root): path.read_bytes()
+            path.relative_to(self.root): read_vault_bytes(path)
             for path in vault_files(
                 self.root,
                 ignored_roots=self.ignored_roots,
@@ -94,3 +97,17 @@ def ensure_inside(root: Path, target: Path) -> None:
         target.relative_to(root.resolve())
     except ValueError as error:
         raise ValueError(f"Vault path escapes configured root: {target}") from error
+
+
+def read_vault_bytes(path: Path) -> bytes:
+    for attempt in range(FILE_READ_ATTEMPTS):
+        try:
+            return path.read_bytes()
+        except PermissionError as error:
+            if attempt == FILE_READ_ATTEMPTS - 1:
+                raise RuntimeError(
+                    "Codex-created Wiki file stayed locked: "
+                    f"{path.name}. Retry `wa auto-distill run`."
+                ) from error
+            time.sleep(FILE_READ_DELAY_SECONDS)
+    raise AssertionError("unreachable")

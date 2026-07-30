@@ -125,10 +125,12 @@ def test_auto_distill_cli_installs_runs_and_removes_bounded_remote_grant(
     assert dispatch(remove, app) == 0
     assert scheduler.removals == 1
     assert not (tmp_path / "state/auto-distill.json").exists()
-    output = capsys.readouterr().out
-    assert "Automatic distillation is installed" in output
-    assert "Automatic distill succeeded for 1 session(s)" in output
-    assert "Retained Wiki pages were kept" in output
+    captured = capsys.readouterr()
+    assert "Automatic distillation is installed" in captured.out
+    assert "Automatic distill succeeded for 1 session(s)" in captured.out
+    assert "Retained Wiki pages were kept" in captured.out
+    assert "Automatic distillation started" in captured.err
+    assert "Codex step finished after" in captured.err
 
 
 def test_auto_distill_install_requires_explicit_standing_content_grant(

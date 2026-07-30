@@ -33,6 +33,11 @@ wa auto-distill install \
 - Retained `inbox/` session records are not copied to the curator workspace and
   do not count toward its 50 MiB foreground safety limit. The limit applies to
   the durable Wiki and imported context the curator can actually inspect.
+- Foreground runs immediately announce the selected runtime and show elapsed
+  time while the curator is working. No percentage is invented because Codex
+  does not expose completion progress for a turn.
+- Curator-created files are retried briefly when Windows still holds a write
+  lock. A persistent lock becomes a concise CLI error instead of a traceback.
 - The scheduled command contains no session IDs, transcript text, model
   credentials, or content grant. It invokes `wa auto-distill run`, which reads
   private local settings.
