@@ -1,132 +1,53 @@
-# Releasing codealmanac
+# Releasing Agent Work Memory
 
-This file describes the Python package release flow for `codealmanac`.
+AWM is currently installed from a checkout or Git repository. Publishing the
+distribution to PyPI remains disabled until package ownership and credentials
+are explicitly decided.
 
-CodeAlmanac v1 is local-only. A release publishes the Python CLI package; it
-does not publish a hosted service, hosted capture path, SDK, MCP package, npm
-package, or compatibility alias.
+## Build and verify
 
-## Release Channels
-
-| Channel | Branch | Version shape | Publish target |
-|---|---|---|---|
-| stable | `main` | `0.1.1` | PyPI default release |
-| dev | `dev` | `0.1.1.dev0` | PyPI pre-release |
-
-Stable users install the normal PyPI release:
-
-```bash
-uv tool install codealmanac
-python -m pip install codealmanac
-```
-
-Dev users must opt into a pre-release:
-
-```bash
-uv tool install "codealmanac==0.1.0.dev0"
-python -m pip install "codealmanac==0.1.0.dev0"
-```
-
-## Pre-Release Checklist
-
-Run from a clean checkout of the release branch:
-
-```bash
-git status --short
+```powershell
+uv sync --locked
 uv run pytest
-uv run ruff check .
-git diff --check
-rm -rf dist
+uv run ruff check src/agentworkmemory tests/test_agentworkmemory*.py
+node --check src/agentworkmemory/viewer/assets/app.js
 uv build --out-dir dist
 uvx twine check dist/*
 ```
 
-Then install the built artifacts into clean Python 3.12 environments and smoke
-the installed CLI:
-
-```bash
-python3.12 -m venv /tmp/codealmanac-wheel-venv
-/tmp/codealmanac-wheel-venv/bin/python -m pip install dist/*.whl
-/tmp/codealmanac-wheel-venv/bin/codealmanac --help
-
-python3.12 -m venv /tmp/codealmanac-sdist-venv
-/tmp/codealmanac-sdist-venv/bin/python -m pip install dist/*.tar.gz
-/tmp/codealmanac-sdist-venv/bin/codealmanac --help
-```
-
-For a full local smoke, use a temp `HOME` and temp repo, then run:
-
-```bash
-codealmanac init <repo> --name release-smoke
-codealmanac search getting
-codealmanac show getting-started --lead
-codealmanac topics
-codealmanac health --json
-codealmanac jobs
-codealmanac sync status --from codex
-codealmanac doctor --json
-codealmanac serve --host 127.0.0.1 --port 49280
-```
-
-Confirm `/api/overview` and `/app.js` respond from the local server.
-
-## Publish
-
-Publish only after the checklist passes and the release commit is on the
-release branch.
-
-```bash
-uvx twine upload dist/*
-```
-
-Verify the uploaded version:
-
-```bash
-python -m pip index versions codealmanac
-```
-
-Do not upload a `dev` version as the stable release. If a bad release is
-published, fix forward with a new version.
-
-## Versioning Policy
-
-CodeAlmanac is pre-1.0.
-
-- Breaking changes bump minor: `0.1.x` -> `0.2.0`.
-- Features and fixes bump patch: `0.1.0` -> `0.1.1`.
-- Dev builds use PEP 440 dev releases: `0.1.1.dev0`, `0.1.1.dev1`.
-- Release candidates are allowed when needed: `0.1.1rc1`.
-
-Do not reuse a published version number.
-
-## Package Surface
-
-The package must expose the canonical command and its short alias:
+Verify that the wheel contains `agentworkmemory/` and exposes only these console
+scripts:
 
 ```text
-codealmanac
-ca
+awm
+agent-work-memory
 ```
 
-The published artifact must include:
+Smoke-test the built artifact in a clean environment with an isolated state
+directory and Vault. Never use a release smoke test against real user state.
 
-- `README.md`
-- `LICENSE.md`
-- `src/codealmanac/server/assets/`
-- `src/codealmanac/server/assets/viewer/`
-- `src/codealmanac/manual/*.md`
-- `src/codealmanac/prompts/base/*.md`
-- `src/codealmanac/prompts/operations/*.md`
+## Install from Git
 
-The published artifact must not introduce:
+```powershell
+uv tool install git+https://github.com/TaeeunKil/agent-work-memory.git
+awm --help
+awm doctor
+```
 
-- public `almanac`, `alm`, or other undeclared command aliases
-- public `capture`, `login`, `connect`, or `upload` commands
-- public SDK or MCP modules
-- npm, Node, or hosted-dashboard install instructions
+For editable local development:
 
-## Secrets
+```powershell
+uv tool install --editable . --force
+```
 
-PyPI upload credentials belong in the maintainer's local keyring, `.pypirc`, or
-environment. Do not commit tokens. Do not add a CI publish path until release
-provenance and token ownership are explicitly decided.
+## Release checklist
+
+1. Update the version in `pyproject.toml` and regenerate `uv.lock`.
+2. Add the user-visible changes to `CHANGELOG.md`.
+3. Run the complete verification block above.
+4. Confirm the viewer opens and Activity reports current and next scheduled
+   AWM operations.
+5. Tag only the reviewed commit.
+
+Do not enable `.github/workflows/publish.yml` until the publishing policy,
+provenance, and credential owner are documented.

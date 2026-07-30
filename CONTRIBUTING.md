@@ -1,77 +1,48 @@
-# Contributing to CodeAlmanac
+# Contributing to Agent Work Memory
 
-CodeAlmanac is a local codebase wiki for AI coding agents. A good contribution
-keeps the command surface scriptable, the wiki artifact repo-owned, and the
-code shape easy for the next maintainer to extend.
+Agent Work Memory (AWM) keeps work performed with coding agents in a private,
+local record store and promotes selected conclusions into a Markdown Wiki.
 
-## Start Here
+## Development setup
 
-```bash
-git clone https://github.com/AlmanacCode/codealmanac.git
-cd codealmanac
-uv sync
-uv run codealmanac --help
+```powershell
+git clone https://github.com/TaeeunKil/agent-work-memory.git
+cd agent-work-memory
+uv sync --locked
+uv run awm --help
 ```
 
-For local CLI testing, prefer `uv run codealmanac ...` from the checkout. To
-test the installed package path, use `uv tool install --force .` in a disposable
-environment.
+Use `uv run awm ...` while developing from a checkout. Use an explicit
+`--state-dir` for manual experiments so development never touches your real
+AWM state:
 
-## Development Checks
+```powershell
+uv run awm --state-dir .tmp-state init .tmp-vault
+```
 
-Run these before opening a pull request:
+## Verification
 
-```bash
+Before opening a pull request, run:
+
+```powershell
 uv run pytest
-uv run ruff check .
-uv build
+uv run ruff check src/agentworkmemory tests/test_agentworkmemory*.py
+node --check src/agentworkmemory/viewer/assets/app.js
+git diff --check
 ```
 
-Use focused pytest runs while developing, then run the full suite before review.
+Tests must use temporary state and Vault paths. Do not commit transcripts,
+private Wiki content, credentials, SSH configuration, or generated state.
 
-## Working With The Codebase
+## Architecture
 
-- Read `README.md`, `MANUAL.md`, and `docs/concepts.md` for the product model.
-- Search the local `almanac/` wiki before changing a real subsystem when the
-  repo has already migrated its wiki.
-- Keep changes local-first. Repo wiki data lives under `almanac/`. User state
-  lives in `~/.codealmanac/`.
-- Keep commands scriptable. Avoid interactive prompts in CLI flows.
+- `src/agentworkmemory/services/` owns domain behavior and ports.
+- `src/agentworkmemory/integrations/` owns operating-system and provider
+  adapters.
+- `src/agentworkmemory/workflows/` coordinates application use cases.
+- `src/agentworkmemory/app.py` is the composition root.
+- `src/codealmanac/` is retained only as unshipped upstream reference source.
 
-## Tests And Fixtures
-
-Tests use pytest. Tests that touch user state should use the `isolated_home`
-fixture so they write under a temp `~/.codealmanac/`, not the real registry.
-
-Prefer creating real initialized wikis through:
-
-```python
-app.workflows.build.initialize(InitializeWorkspaceRequest(path=repo))
-```
-
-Synthetic wiki fixtures must include both source markers:
-
-```text
-almanac/README.md
-almanac/topics.yaml
-```
-
-## Pull Request Shape
-
-A good pull request includes:
-
-- A clear problem statement.
-- The design choice, including rejected alternatives when architecture changes.
-- Tests or a short explanation of why no automated test is useful.
-- Any docs or wiki updates needed for future agents.
-
-Keep pull requests buildable and scoped. Avoid unrelated formatting churn.
-
-## Commit Conventions
-
-Use the existing commit style:
-
-- `feat(slice-N): <summary>` for new slice work.
-- `fix(slice-N-review): <summary>` for review fixes.
-- `docs: <summary>` for documentation-only changes.
-- `refactor(slice-N): <summary>` for structural cleanup within a slice.
+Read `CLAUDE.md`, `MANUAL.md`, and the current slice plan before changing code.
+User-facing work should update the README or the AWM user guide in the same
+change.

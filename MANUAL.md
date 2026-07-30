@@ -156,38 +156,36 @@ misshapen base*. Two refusals are first-class outputs, not evasions:
 Say either plainly, with the reason, and turn it into an architecture
 conversation.
 
-## 6. Repo-specific instantiation — codealmanac
+## 6. Repo-specific instantiation — Agent Work Memory
 
-- Only operations invoke AI or write page prose. Read commands may
-  refresh derived local index state and read committed markdown for display or
-  validation. Organization commands may deterministically rewrite wiki metadata
-  through explicit verbs such as `tag`, `topics`, `review`, and `migrate`.
-- **Intelligence lives in prompts, not pipelines.** No propose/review/apply
-  state machines, no orchestration JSON schema between writer and reviewer, no
-  `--dry-run` rehearsals. The writer owns outcomes.
-- Local-only repo wiki tree plus `~/.codealmanac/codealmanac.db` local state.
-  New repos use `almanac/` only. `docs/almanac/`, `.almanac/`, custom roots,
-  and compatibility aliases are retired.
-- The committed wiki source is a browseable nested Markdown tree under
-  `almanac/`. Runtime state belongs under `~/.codealmanac/`, not in the
-  committed wiki tree. The source shape is:
+- AWM is one local application, not a feature installed separately into every
+  repository. It collects provider records across workspaces and remote hosts.
+- Private runtime state belongs under the platform state root
+  (`%LOCALAPPDATA%\AgentWorkMemory` on Windows). The user-selected Markdown
+  Vault is the durable, browseable knowledge layer.
+- Session capture is deterministic. AI is invoked only by explicit or
+  explicitly scheduled distillation, and external-content access remains an
+  explicit grant.
+- The composition root owns concrete collectors, schedulers, curator runtimes,
+  and SSH adapters. Services depend on ports; workflows coordinate use cases.
+- The Vault source shape is:
   ```text
-  almanac/
-  |-- README.md
-  |-- topics.yaml
-  |-- architecture/
-  |   |-- README.md
-  |   `-- indexing.md
+  AgentWorkMemoryVault/
+  |-- Home.md
+  |-- inbox/
+  |   `-- agent-sessions/
+  |-- projects/
   |-- decisions/
-  |   `-- local-first.md
-  `-- guides/
-      `-- setup.md
+  |-- problems/
+  |-- procedures/
+  |-- systems/
+  |-- unfinished/
+  `-- imports/
   ```
-- Page identity is the path under `almanac/` without `.md`; `README.md` is the
-  folder landing page. Use Markdown links for page links and `sources:` for
-  file evidence. Double-bracket links and legacy file-list frontmatter are
-  retired.
-- `GLOB` not `LIKE` for path queries. Paths normalized on both sides of a
-  comparison.
+- Inbox pages are retained evidence. Durable pages live only in the Wiki
+  categories and cite source sessions in frontmatter.
+- One product name, command family, state root, package, and schedule pair are
+  canonical: Agent Work Memory, `awm`, `AgentWorkMemory`, `agentworkmemory`,
+  and `AWM Sync` / `AWM Auto Distill`.
 - Slices: plan → build → review → fix → next. The review pass is where latent
   bugs surface; don't collapse it.

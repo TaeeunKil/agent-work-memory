@@ -3,15 +3,15 @@ requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "codealmanac"
-version = "0.4.7"
-description = "A local codebase wiki maintained by AI coding agents."
+name = "agent-work-memory"
+version = "0.1.0"
+description = "A private local memory and Wiki for work done with AI agents."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE.md"]
-authors = [{ name = "Almanac" }]
-keywords = ["agents", "codebase", "documentation", "wiki"]
+authors = [{ name = "Agent Work Memory contributors" }]
+keywords = ["agents", "memory", "documentation", "wiki"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -44,14 +44,12 @@ dependencies = [
 ]
 
 [project.scripts]
-ca = "codealmanac.cli.main:main"
-codealmanac = "codealmanac.cli.main:main"
-wa = "workalmanac.cli:main"
-workalmanac = "workalmanac.cli:main"
+awm = "agentworkmemory.cli:main"
+agent-work-memory = "agentworkmemory.cli:main"
 
 [project.urls]
-Repository = "https://github.com/AlmanacCode/codealmanac"
-Issues = "https://github.com/AlmanacCode/codealmanac/issues"
+Repository = "https://github.com/TaeeunKil/agent-work-memory"
+Issues = "https://github.com/TaeeunKil/agent-work-memory/issues"
 
 [dependency-groups]
 dev = [
@@ -63,6 +61,7 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+python_files = ["test_agentworkmemory*.py"]
 
 [tool.ruff]
 line-length = 88
@@ -73,18 +72,15 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["agentworkmemory*"]
 
 [tool.setuptools.package-data]
-codealmanac = [
-  "server/assets/*.html",
-  "server/assets/*.css",
-  "server/assets/*.js",
-  "server/assets/viewer/*.js",
+agentworkmemory = [
+  "agents/*.md",
+  "viewer/assets/*.html",
+  "viewer/assets/*.css",
+  "viewer/assets/*.js",
 ]
-"codealmanac.manual" = ["*.md"]
-"codealmanac.agents" = ["**/*.yaml", "**/*.md"]
-"codealmanac.services.setup" = ["*.md"]
-workalmanac = ["agents/*.md", "viewer/assets/*.html", "viewer/assets/*.css", "viewer/assets/*.js"]
 
 [tool.uv]
 package = true

@@ -24,8 +24,8 @@ fact through their existing typed status models. The viewer adds a dedicated
 schedule endpoint, fetched independently from the fast activity ledger.
 
 ```python
-sync = workalmanac.automation.status()
-distill = workalmanac.auto_distillation.status()
+sync = agentworkmemory.automation.status()
+distill = agentworkmemory.auto_distillation.status()
 next_schedule = earliest_installed(sync, distill)
 ```
 
@@ -49,15 +49,15 @@ human-readable `schtasks` output. Unsupported platforms return no next run.
 
 ## Verification
 
-- `uv run pytest tests/test_workalmanac_sync.py tests/test_workalmanac_auto_distill.py tests/test_workalmanac_viewer.py`
-- `uv run pytest tests/test_workalmanac_scheduled.py`
-- `uv run ruff check src/workalmanac tests/test_workalmanac_sync.py tests/test_workalmanac_auto_distill.py tests/test_workalmanac_viewer.py`
+- `uv run pytest tests/test_agentworkmemory_sync.py tests/test_agentworkmemory_auto_distill.py tests/test_agentworkmemory_viewer.py`
+- `uv run pytest tests/test_agentworkmemory_scheduled.py`
+- `uv run ruff check src/agentworkmemory tests/test_agentworkmemory_sync.py tests/test_agentworkmemory_auto_distill.py tests/test_agentworkmemory_viewer.py`
 - JavaScript syntax check and desktop/mobile viewer inspection.
 
 ## Read before coding
 
 - `MANUAL.md`
 - `docs/plans/slice-153-automatic-distillation.md`
-- `src/workalmanac/services/automation/`
-- `src/workalmanac/services/auto_distillation/`
-- `src/workalmanac/viewer/`
+- `src/agentworkmemory/services/automation/`
+- `src/agentworkmemory/services/auto_distillation/`
+- `src/agentworkmemory/viewer/`

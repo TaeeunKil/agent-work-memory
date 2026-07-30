@@ -2,7 +2,7 @@
 
 ## Outcome
 
-Work Almanac can register explicit SSH hosts, copy only changed Codex and
+Agent Work Memory can register explicit SSH hosts, copy only changed Codex and
 Claude transcript files into private local state, and feed those snapshots
 through the existing session, cursor, Vault, Wiki, and search path.
 
@@ -85,7 +85,7 @@ must establish host trust and working key/agent authentication with ordinary
   and wildcard SSH aliases.
 - Raw SSH stderr, remote paths, keys, and transcript contents never enter
   status records or normal CLI errors.
-- Remote cache lives under the existing private Work Almanac state directory.
+- Remote cache lives under the existing private Agent Work Memory state directory.
 - Archives are treated as untrusted and every member is containment-checked
   before extraction.
 - A failed host does not prevent successful local collection or other remote
@@ -108,15 +108,15 @@ owner selects a runtime and explicit content policy.
 
 ## Files
 
-- `src/workalmanac/services/remotes/`
-- `src/workalmanac/integrations/remotes/`
-- `src/workalmanac/workflows/remote_sync/`
-- `src/workalmanac/app.py`
-- `src/workalmanac/cli.py`
-- `src/workalmanac/workflows/sync/`
-- `src/workalmanac/services/diagnostics/`
-- `tests/test_workalmanac_remotes.py`
-- Work Almanac user/completion plans
+- `src/agentworkmemory/services/remotes/`
+- `src/agentworkmemory/integrations/remotes/`
+- `src/agentworkmemory/workflows/remote_sync/`
+- `src/agentworkmemory/app.py`
+- `src/agentworkmemory/cli.py`
+- `src/agentworkmemory/workflows/sync/`
+- `src/agentworkmemory/services/diagnostics/`
+- `tests/test_agentworkmemory_remotes.py`
+- Agent Work Memory user/completion plans
 
 ## Verification
 
@@ -128,7 +128,7 @@ owner selects a runtime and explicit content policy.
 - CLI mapping and bounded output tests.
 - Scheduler command contract remains unchanged and automatically includes
   registered remotes.
-- Work Almanac regression suite, Ruff, package build, editable reinstall.
+- Agent Work Memory regression suite, Ruff, package build, editable reinstall.
 - Real `wa remote list`; real host registration only after a concrete host is
   chosen from the user's SSH configuration.
 
@@ -137,6 +137,6 @@ owner selects a runtime and explicit content policy.
 - Discovering or connecting to every host in `~/.ssh/config` automatically.
 - Password storage or interactive authentication.
 - Windows remote-host transcript layouts.
-- Remote installation of Work Almanac.
+- Remote installation of Agent Work Memory.
 - Shell-history or arbitrary filesystem collection.
 - Automatic paid/remote distillation.

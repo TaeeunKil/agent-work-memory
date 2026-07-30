@@ -83,4 +83,4 @@ workflow.
 - scheduled action uses the module entry point and state directory only;
 - pending selection respects the configured bound;
 - no-op, success, and failure behavior remain isolated;
-- Work Almanac regression suite and Ruff pass.
+- Agent Work Memory regression suite and Ruff pass.

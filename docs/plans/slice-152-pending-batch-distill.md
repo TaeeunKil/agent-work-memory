@@ -40,4 +40,4 @@ persisted standing content grant, retry policy, and usage budget.
 - conflicting and invalid CLI inputs fail before curator execution;
 - empty pending queues are no-ops;
 - explicit-ID behavior remains compatible;
-- Work Almanac regression tests and Ruff pass.
+- Agent Work Memory regression tests and Ruff pass.
