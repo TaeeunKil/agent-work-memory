@@ -14,6 +14,9 @@ from agentworkmemory.services.auto_distillation.models import AutoDistillSetting
 from agentworkmemory.services.automation.models import AutoSyncSettings
 from agentworkmemory.services.curators.models import ContentAccess
 from agentworkmemory.services.diagnostics.models import DiagnosticStatus
+from agentworkmemory.services.distillation.outcomes import (
+    summarize_session_outcomes,
+)
 from agentworkmemory.services.sessions.models import AgentProvider
 from agentworkmemory.services.synchronization.models import SyncReceipt, SyncStatus
 from agentworkmemory.settings import load_config
@@ -623,6 +626,17 @@ def dispatch_auto_distill(args: argparse.Namespace, app: AgentWorkMemory) -> int
                 f"{len(receipt.session_ids)} session(s)."
             )
             if receipt.distill is not None:
+                print(
+                    "Session outcomes: "
+                    f"{summarize_session_outcomes(receipt.distill.session_outcomes)}."
+                )
+                for outcome in receipt.distill.session_outcomes:
+                    pages = ", ".join(path.as_posix() for path in outcome.pages)
+                    suffix = f" -> {pages}" if pages else ""
+                    print(
+                        f"{outcome.session_id}: {outcome.disposition.value}"
+                        f"{suffix}"
+                    )
                 for path in receipt.distill.changed_files:
                     print(path.as_posix())
         return 0

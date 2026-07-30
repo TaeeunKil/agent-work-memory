@@ -6,6 +6,7 @@ from agentworkmemory.services.curators.models import ContentAccess
 from agentworkmemory.services.distillation.models import (
     DistillReceipt,
     DistillStatus,
+    SessionDistillOutcome,
 )
 
 
@@ -19,11 +20,13 @@ class DistillationStore:
                 """
                 INSERT INTO distill_receipts (
                   run_id, runtime, model, content_access, session_ids, status,
-                  changed_files, output_summary, started_at, finished_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  changed_files, session_outcomes, output_summary, started_at,
+                  finished_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id) DO UPDATE SET
                   status = excluded.status,
                   changed_files = excluded.changed_files,
+                  session_outcomes = excluded.session_outcomes,
                   output_summary = excluded.output_summary,
                   finished_at = excluded.finished_at
                 """,
@@ -36,6 +39,12 @@ class DistillationStore:
                     receipt.status.value,
                     json.dumps(
                         tuple(path.as_posix() for path in receipt.changed_files)
+                    ),
+                    json.dumps(
+                        tuple(
+                            outcome.model_dump(mode="json")
+                            for outcome in receipt.session_outcomes
+                        )
                     ),
                     receipt.output_summary,
                     receipt.started_at.isoformat(),
@@ -69,6 +78,10 @@ class DistillationStore:
             status=DistillStatus(row["status"]),
             changed_files=tuple(
                 Path(value) for value in json.loads(row["changed_files"])
+            ),
+            session_outcomes=tuple(
+                SessionDistillOutcome.model_validate(value)
+                for value in json.loads(row["session_outcomes"])
             ),
             output_summary=row["output_summary"],
             started_at=row["started_at"],

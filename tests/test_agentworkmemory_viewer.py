@@ -241,7 +241,11 @@ def test_viewer_can_distill_a_bounded_pending_batch(tmp_path: Path):
     activity = client.get("/api/activity").json()[0]
     assert activity["task"] == "auto-distill"
     assert activity["status"] == "succeeded"
-    assert activity["summary"].startswith("Wiki build completed")
+    assert activity["summary"].startswith("Session outcomes")
+    assert any(
+        line.startswith("Wiki build completed")
+        for line in activity["log_lines"]
+    )
 
 
 def test_pending_viewer_batch_stays_with_one_workspace_and_can_be_requeued(

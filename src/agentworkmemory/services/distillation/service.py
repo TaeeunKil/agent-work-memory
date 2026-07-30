@@ -6,6 +6,7 @@ from agentworkmemory.services.curators.models import ContentAccess
 from agentworkmemory.services.distillation.models import (
     DistillReceipt,
     DistillStatus,
+    SessionDistillOutcome,
 )
 from agentworkmemory.services.distillation.store import DistillationStore
 
@@ -42,6 +43,7 @@ class DistillationService:
         *,
         status: DistillStatus,
         changed_files: tuple[Path, ...] = (),
+        session_outcomes: tuple[SessionDistillOutcome, ...] = (),
         output_summary: str | None = None,
     ) -> DistillReceipt:
         summary = output_summary.strip() if output_summary else None
@@ -52,6 +54,7 @@ class DistillationService:
                 update={
                     "status": status,
                     "changed_files": changed_files,
+                    "session_outcomes": session_outcomes,
                     "output_summary": summary,
                     "finished_at": datetime.now(UTC),
                 }

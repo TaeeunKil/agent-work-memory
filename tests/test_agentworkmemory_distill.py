@@ -26,7 +26,14 @@ from agentworkmemory.services.curators.models import (
     CuratorRunResult,
     CuratorRunStatus,
 )
-from agentworkmemory.services.distillation.models import DistillStatus
+from agentworkmemory.services.distillation.models import (
+    DistillStatus,
+    SessionDistillDisposition,
+)
+from agentworkmemory.services.distillation.outcomes import (
+    classify_session_outcomes,
+)
+from agentworkmemory.services.wiki.models import WikiPage
 from agentworkmemory.settings import AgentWorkMemoryConfig
 from agentworkmemory.workflows.distill import DistillSessions
 
@@ -107,7 +114,7 @@ def test_metadata_only_prompt_withholds_event_bodies(tmp_path: Path):
         app.sessions.events(session.session_id),
     )
 
-    app.distill.run(
+    receipt = app.distill.run(
         DistillSessions(
             session_ids=(session.session_id,),
             runtime=adapter.runtime,
@@ -119,6 +126,45 @@ def test_metadata_only_prompt_withholds_event_bodies(tmp_path: Path):
     assert "Sensitive agent transcript body." not in prompt
     assert "Event bodies withheld" in prompt
     assert adapter.workspace_inbox_visibility == [False]
+    assert receipt.session_outcomes[0].disposition is (
+        SessionDistillDisposition.NO_DURABLE_KNOWLEDGE
+    )
+    assert app.distillation.get(receipt.run_id) == receipt
+
+
+def test_distill_outcomes_classify_created_merged_covered_and_noop():
+    created = "ses_created"
+    merged = "ses_merged"
+    covered = "ses_covered"
+    skipped = "ses_skipped"
+    before = (
+        wiki_page("projects/existing.md", merged),
+        wiki_page("decisions/covered.md", covered),
+    )
+    after = (
+        wiki_page("projects/existing.md", merged),
+        wiki_page("decisions/covered.md", covered),
+        wiki_page("procedures/new.md", created),
+    )
+
+    outcomes = classify_session_outcomes(
+        (created, merged, covered, skipped),
+        before=before,
+        after=after,
+        changed_files=(
+            Path("projects/existing.md"),
+            Path("procedures/new.md"),
+        ),
+    )
+
+    assert [outcome.disposition for outcome in outcomes] == [
+        SessionDistillDisposition.CREATED,
+        SessionDistillDisposition.MERGED,
+        SessionDistillDisposition.ALREADY_COVERED,
+        SessionDistillDisposition.NO_DURABLE_KNOWLEDGE,
+    ]
+    assert outcomes[0].pages == (Path("procedures/new.md"),)
+    assert outcomes[-1].pages == ()
 
 
 def test_selected_content_is_bounded_into_curator_prompt(tmp_path: Path):
@@ -657,6 +703,16 @@ def note_session(app, text: str, *, cwd: Path | None = None):
         app.sessions.events(session.session_id),
     )
     return session
+
+
+def wiki_page(path: str, session_id: str) -> WikiPage:
+    relative = Path(path)
+    return WikiPage(
+        path=relative,
+        title=relative.stem,
+        category=relative.parts[0],
+        source_session_ids=(session_id,),
+    )
 
 
 def write_decision(request: CuratorRunRequest) -> None:
