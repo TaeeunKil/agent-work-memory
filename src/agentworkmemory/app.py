@@ -15,6 +15,9 @@ from agentworkmemory.integrations.transcripts import (
     CodexTranscriptCollector,
     CursorTranscriptCollector,
 )
+from agentworkmemory.integrations.vault_repository import (
+    GitVaultRepositoryAdapter,
+)
 from agentworkmemory.services.activity import ActivityService
 from agentworkmemory.services.auto_distillation.ports import (
     AutoDistillSchedulerAdapter,
@@ -40,6 +43,10 @@ from agentworkmemory.services.sessions.store import SessionsStore
 from agentworkmemory.services.synchronization.service import SynchronizationService
 from agentworkmemory.services.synchronization.store import SynchronizationStore
 from agentworkmemory.services.vault import VaultService
+from agentworkmemory.services.vault_repository import (
+    VaultRepositoryAdapter,
+    VaultRepositoryService,
+)
 from agentworkmemory.services.viewer import ViewerService
 from agentworkmemory.services.wiki import WikiCatalogService
 from agentworkmemory.settings import AgentWorkMemoryConfig, load_config
@@ -52,6 +59,7 @@ from agentworkmemory.workflows.import_records import ImportAgentRecordsWorkflow
 from agentworkmemory.workflows.remote_sync import SyncRemoteRecordsWorkflow
 from agentworkmemory.workflows.setup import SetupAgentWorkMemoryWorkflow
 from agentworkmemory.workflows.sync import SyncAgentRecordsWorkflow
+from agentworkmemory.workflows.vault_repository import VaultRepositoryWorkflow
 
 
 class AgentWorkMemory:
@@ -79,6 +87,7 @@ class AgentWorkMemory:
         sync: SyncAgentRecordsWorkflow,
         synchronization: SynchronizationService,
         viewer: ViewerService,
+        vault_repository: VaultRepositoryWorkflow,
         wiki: WikiCatalogService,
     ):
         self.automation = automation
@@ -102,6 +111,7 @@ class AgentWorkMemory:
         self.sync = sync
         self.synchronization = synchronization
         self.viewer = viewer
+        self.vault_repository = vault_repository
         self.wiki = wiki
 
     @property
@@ -116,6 +126,7 @@ def create_app(
     scheduler_adapter: SchedulerAdapter | None = None,
     auto_distill_scheduler_adapter: AutoDistillSchedulerAdapter | None = None,
     remote_adapter: RemoteSnapshotAdapter | None = None,
+    vault_repository_adapter: VaultRepositoryAdapter | None = None,
     ollama_url: str | None = None,
 ) -> AgentWorkMemory:
     resolved = config or load_config()
@@ -138,6 +149,15 @@ def create_app(
     remote_sync = SyncRemoteRecordsWorkflow(remotes, collect)
     import_records = ImportAgentRecordsWorkflow(sessions, vault, wiki)
     search = SearchService(resolved.database_path, sessions, vault)
+    vault_repository_service = VaultRepositoryService(
+        vault,
+        vault_repository_adapter or GitVaultRepositoryAdapter(),
+    )
+    vault_repository = VaultRepositoryWorkflow(
+        vault_repository_service,
+        wiki,
+        search,
+    )
     import_legacy = ImportLegacyAlmanacWorkflow(vault, wiki, search)
     synchronization = SynchronizationService(
         SynchronizationStore(resolved.database_path)
@@ -245,5 +265,6 @@ def create_app(
         sync=sync,
         synchronization=synchronization,
         viewer=viewer,
+        vault_repository=vault_repository,
         wiki=wiki,
     )

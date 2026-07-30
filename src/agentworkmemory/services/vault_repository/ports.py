@@ -1,0 +1,19 @@
+from pathlib import Path
+from typing import Protocol
+
+from agentworkmemory.services.vault_repository.models import VaultRepositoryStatus
+
+
+class VaultRepositoryAdapter(Protocol):
+    def clone(self, repository: str, destination: Path) -> None: ...
+
+    def initialize(self, root: Path, repository: str) -> None: ...
+
+    def status(self, root: Path) -> VaultRepositoryStatus: ...
+
+    def commit_all(self, root: Path, message: str) -> bool: ...
+
+    def pull_rebase(self, root: Path) -> None: ...
+
+    def push(self, root: Path) -> None: ...
+
