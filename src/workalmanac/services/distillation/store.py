@@ -74,3 +74,20 @@ class DistillationStore:
             started_at=row["started_at"],
             finished_at=row["finished_at"],
         )
+
+    def list(self, limit: int = 50) -> tuple[DistillReceipt, ...]:
+        with open_database(self.database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT run_id FROM distill_receipts
+                ORDER BY started_at DESC, run_id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        receipts: list[DistillReceipt] = []
+        for row in rows:
+            receipt = self.get(row["run_id"])
+            if receipt is not None:
+                receipts.append(receipt)
+        return tuple(receipts)

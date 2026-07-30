@@ -52,3 +52,6 @@ class SynchronizationService:
 
     def latest(self) -> SyncReceipt | None:
         return self.store.latest()
+
+    def list(self, limit: int = 50) -> tuple[SyncReceipt, ...]:
+        return self.store.list(limit)

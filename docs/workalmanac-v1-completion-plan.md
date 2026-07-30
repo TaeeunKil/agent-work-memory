@@ -116,11 +116,30 @@ the model shell or direct filesystem access.
 
 ### Slice 148: local viewer
 
-- Add `wa serve` for a loopback-only local application.
-- Browse sessions, durable pages, backlinks, distill receipts, and sync health.
-- Search both retained sessions and Wiki pages.
-- Trigger explicit collection and selected distillation from the UI.
-- Never serve provider transcript files or expose arbitrary filesystem paths.
+Status: complete on `codex/workalmanac`.
+
+- [x] Add `wa serve` for a loopback-only local application.
+- [x] Browse sessions, durable pages, backlinks, distill receipts, and sync
+  health.
+- [x] Search retained sessions and durable Wiki pages without generated-page
+  duplicates.
+- [x] Trigger explicit collection and selected distillation from the UI.
+- [x] Never serve provider transcript files or expose arbitrary filesystem
+  paths.
+- [x] Require a custom same-origin action header for JSON mutations.
+- [x] Disable raw Markdown HTML and send no-store, CSP, frame, referrer, and
+  content-type security headers.
+- [x] Ship responsive packaged HTML, CSS, and JavaScript with no remote assets.
+
+Run:
+
+```powershell
+wa serve
+wa serve --port 4932 --no-open
+```
+
+The server always binds to `127.0.0.1`. There is no option to expose it on a
+LAN interface.
 
 ### Slice 149: onboarding and migration
 

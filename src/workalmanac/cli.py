@@ -111,6 +111,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands.add_parser("runtimes", help="Check available curator runtimes.")
 
+    serve = commands.add_parser("serve", help="Open the local Work Almanac viewer.")
+    serve.add_argument("--port", type=int, default=3928)
+    serve.add_argument("--no-open", action="store_true")
+
     commands.add_parser("sessions", help="List retained agent sessions.")
 
     show = commands.add_parser("show", help="Show one retained session.")
@@ -172,6 +176,17 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
             print(f"{readiness.runtime:<8} {status:<11} {readiness.message}")
             if readiness.repair:
                 print(f"                     {readiness.repair}")
+        return 0
+    if args.command == "serve":
+        app.vault.require_path()
+        app.wiki.refresh()
+        from workalmanac.viewer.runner import serve_viewer
+
+        serve_viewer(
+            app,
+            port=args.port,
+            open_browser=not args.no_open,
+        )
         return 0
     if args.command == "sync":
         app.vault.require_path()

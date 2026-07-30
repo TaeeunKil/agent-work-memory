@@ -179,6 +179,19 @@ Implemented in
 - [x] `wa runtimes` readiness diagnostics;
 - [x] mocked HTTP integration tests without a real model call.
 
+## Slice 9: local viewer
+
+Implemented in
+[Work Almanac v1 Completion Plan](workalmanac-v1-completion-plan.md):
+
+- [x] loopback-only `wa serve`;
+- [x] sessions, durable pages, backlinks, search, and body-free activity;
+- [x] explicit sync and distill actions;
+- [x] bounded page paths and no provider source-path exposure;
+- [x] safe Markdown rendering and same-origin mutation protection;
+- [x] responsive, dependency-free packaged viewer assets;
+- [x] browser QA at desktop and mobile widths with no console errors.
+
 ## Validation record
 
 - Ruff: all new Work Almanac code and changed contract tests pass.
