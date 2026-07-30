@@ -1,5 +1,8 @@
 from pathlib import Path
 
+from workalmanac.services.auto_distillation.service import (
+    AutoDistillationService,
+)
 from workalmanac.services.automation.service import AutomationService
 from workalmanac.services.curators.service import CuratorsService
 from workalmanac.services.diagnostics.models import (
@@ -20,6 +23,7 @@ class DiagnosticsService:
         config: WorkAlmanacConfig,
         vault: VaultService,
         automation: AutomationService,
+        auto_distillation: AutoDistillationService,
         curators: CuratorsService,
         sessions: SessionsService,
         wiki: WikiCatalogService,
@@ -28,6 +32,7 @@ class DiagnosticsService:
         self.config = config
         self.vault = vault
         self.automation = automation
+        self.auto_distillation = auto_distillation
         self.curators = curators
         self.sessions = sessions
         self.wiki = wiki
@@ -45,6 +50,7 @@ class DiagnosticsService:
             transcript_check(home / ".codex" / "sessions", "codex"),
             transcript_check(home / ".claude" / "projects", "claude"),
             automation_check(self.automation),
+            auto_distillation_check(self.auto_distillation),
             knowledge_check(self.sessions, self.wiki),
             remotes_check(self.remotes),
         ]
@@ -126,6 +132,21 @@ def automation_check(automation: AutomationService) -> DiagnosticCheck:
     return DiagnosticCheck(
         name="automation",
         status=level,
+        message=status.message,
+    )
+
+
+def auto_distillation_check(
+    automation: AutoDistillationService,
+) -> DiagnosticCheck:
+    status = automation.status()
+    return DiagnosticCheck(
+        name="auto-distill",
+        status=(
+            DiagnosticStatus.OK
+            if status.installed
+            else DiagnosticStatus.WARNING
+        ),
         message=status.message,
     )
 

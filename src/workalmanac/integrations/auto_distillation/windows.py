@@ -1,0 +1,61 @@
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+from workalmanac.integrations.automation.windows import run_schtasks
+from workalmanac.services.auto_distillation.models import AutoDistillSettings
+
+TASK_NAME = "WorkAlmanac Auto Distill"
+
+
+class WindowsAutoDistillSchedulerAdapter:
+    task_name = TASK_NAME
+
+    def available(self) -> bool:
+        return shutil.which("schtasks.exe") is not None
+
+    def install(self, settings: AutoDistillSettings, state_dir: Path) -> None:
+        completed = run_schtasks(
+            (
+                "/Create",
+                "/F",
+                "/SC",
+                "MINUTE",
+                "/MO",
+                str(settings.interval_minutes),
+                "/TN",
+                self.task_name,
+                "/TR",
+                scheduled_auto_distill_action(state_dir),
+            )
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                "Windows Task Scheduler rejected automatic distillation"
+            )
+
+    def installed(self) -> bool:
+        completed = run_schtasks(("/Query", "/TN", self.task_name))
+        return completed.returncode == 0
+
+    def remove(self) -> None:
+        completed = run_schtasks(("/Delete", "/F", "/TN", self.task_name))
+        if completed.returncode != 0:
+            raise RuntimeError(
+                "Windows Task Scheduler could not remove automatic distillation"
+            )
+
+
+def scheduled_auto_distill_action(state_dir: Path) -> str:
+    return subprocess.list2cmdline(
+        (
+            sys.executable,
+            "-m",
+            "workalmanac.cli",
+            "--state-dir",
+            str(state_dir),
+            "auto-distill",
+            "run",
+        )
+    )

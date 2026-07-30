@@ -1,6 +1,9 @@
 from collections.abc import Sequence
 
 from workalmanac.database import open_database
+from workalmanac.integrations.auto_distillation import (
+    default_auto_distill_scheduler_adapter,
+)
 from workalmanac.integrations.automation import default_scheduler_adapter
 from workalmanac.integrations.curators import (
     OllamaCuratorAdapter,
@@ -11,6 +14,13 @@ from workalmanac.integrations.transcripts import (
     ClaudeTranscriptCollector,
     CodexTranscriptCollector,
 )
+from workalmanac.services.auto_distillation.ports import (
+    AutoDistillSchedulerAdapter,
+)
+from workalmanac.services.auto_distillation.service import (
+    AutoDistillationService,
+)
+from workalmanac.services.auto_distillation.store import AutoDistillStore
 from workalmanac.services.automation.ports import SchedulerAdapter
 from workalmanac.services.automation.service import AutomationService
 from workalmanac.services.automation.store import AutomationStore
@@ -31,6 +41,7 @@ from workalmanac.services.vault import VaultService
 from workalmanac.services.viewer import ViewerService
 from workalmanac.services.wiki import WikiCatalogService
 from workalmanac.settings import WorkAlmanacConfig, load_config
+from workalmanac.workflows.auto_distill import AutoDistillWorkflow
 from workalmanac.workflows.collect import CollectAgentRecordsWorkflow
 from workalmanac.workflows.distill import DistillSessionsWorkflow
 from workalmanac.workflows.import_legacy import ImportLegacyAlmanacWorkflow
@@ -45,6 +56,8 @@ class WorkAlmanac:
         self,
         *,
         automation: AutomationService,
+        auto_distillation: AutoDistillationService,
+        auto_distill: AutoDistillWorkflow,
         sessions: SessionsService,
         vault: VaultService,
         collect: CollectAgentRecordsWorkflow,
@@ -64,6 +77,8 @@ class WorkAlmanac:
         wiki: WikiCatalogService,
     ):
         self.automation = automation
+        self.auto_distillation = auto_distillation
+        self.auto_distill = auto_distill
         self.sessions = sessions
         self.vault = vault
         self.collect = collect
@@ -92,6 +107,7 @@ def create_app(
     *,
     curator_adapters: Sequence[CuratorAdapter] | None = None,
     scheduler_adapter: SchedulerAdapter | None = None,
+    auto_distill_scheduler_adapter: AutoDistillSchedulerAdapter | None = None,
     remote_adapter: RemoteSnapshotAdapter | None = None,
     ollama_url: str | None = None,
 ) -> WorkAlmanac:
@@ -131,6 +147,12 @@ def create_app(
         AutomationStore(resolved.state_dir / "auto-sync.json"),
         resolved.state_dir,
     )
+    auto_distillation = AutoDistillationService(
+        auto_distill_scheduler_adapter
+        or default_auto_distill_scheduler_adapter(),
+        AutoDistillStore(resolved.state_dir / "auto-distill.json"),
+        resolved.state_dir,
+    )
     setup = SetupWorkAlmanacWorkflow(vault, wiki, sync, automation)
     adapters = (
         tuple(curator_adapters)
@@ -154,6 +176,7 @@ def create_app(
         resolved,
         vault,
         automation,
+        auto_distillation,
         curators,
         sessions,
         wiki,
@@ -168,8 +191,16 @@ def create_app(
         search,
         wiki,
     )
+    auto_distill = AutoDistillWorkflow(
+        auto_distillation,
+        sessions,
+        distill,
+        resolved.state_dir / "auto-distill.lock",
+    )
     return WorkAlmanac(
         automation=automation,
+        auto_distillation=auto_distillation,
+        auto_distill=auto_distill,
         sessions=sessions,
         vault=vault,
         collect=collect,

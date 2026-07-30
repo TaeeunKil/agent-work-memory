@@ -1,15 +1,18 @@
 import argparse
 import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from workalmanac.app import WorkAlmanac, create_app
+from workalmanac.services.auto_distillation.models import AutoDistillSettings
 from workalmanac.services.automation.models import AutoSyncSettings
 from workalmanac.services.curators.models import ContentAccess
 from workalmanac.services.diagnostics.models import DiagnosticStatus
 from workalmanac.services.sessions.models import AgentProvider
 from workalmanac.services.synchronization.models import SyncReceipt, SyncStatus
 from workalmanac.settings import load_config
+from workalmanac.workflows.auto_distill import AutoDistillRunState
 from workalmanac.workflows.collect import CollectAgentRecords
 from workalmanac.workflows.distill import DistillSessions
 from workalmanac.workflows.import_legacy import ImportLegacyAlmanac
@@ -96,6 +99,69 @@ def build_parser() -> argparse.ArgumentParser:
     add_collection_options(auto_install)
     auto_commands.add_parser("status", help="Show scheduler and last-sync status.")
     auto_commands.add_parser("remove", help="Remove automatic collection.")
+
+    auto_distill = commands.add_parser(
+        "auto-distill",
+        help="Manage opt-in scheduled Wiki distillation.",
+    )
+    auto_distill_commands = auto_distill.add_subparsers(
+        dest="auto_distill_command",
+        required=True,
+    )
+    auto_distill_install = auto_distill_commands.add_parser(
+        "install",
+        help="Install bounded scheduled distillation.",
+    )
+    auto_distill_install.add_argument(
+        "--every",
+        type=int,
+        default=60,
+        metavar="MINUTES",
+    )
+    auto_distill_install.add_argument("--limit", type=int, default=1)
+    auto_distill_install.add_argument(
+        "--for-days",
+        type=int,
+        default=7,
+        metavar="DAYS",
+        help="Expire the standing grant after this many days (default: 7).",
+    )
+    auto_distill_install.add_argument(
+        "--max-total",
+        type=int,
+        default=24,
+        metavar="SESSIONS",
+        help="Maximum sessions for this standing grant (default: 24).",
+    )
+    auto_distill_install.add_argument(
+        "--using",
+        dest="runtime",
+        default="codex",
+    )
+    auto_distill_install.add_argument("--model")
+    auto_distill_access = auto_distill_install.add_mutually_exclusive_group()
+    auto_distill_access.add_argument(
+        "--allow-local-content",
+        action="store_true",
+        help="Persist permission to send selected bodies to a local runtime.",
+    )
+    auto_distill_access.add_argument(
+        "--allow-remote-content",
+        action="store_true",
+        help="Persist permission to send selected bodies to the named runtime.",
+    )
+    auto_distill_commands.add_parser(
+        "status",
+        help="Show automatic distillation settings and scheduler status.",
+    )
+    auto_distill_commands.add_parser(
+        "run",
+        help="Run one configured automatic-distillation batch now.",
+    )
+    auto_distill_commands.add_parser(
+        "remove",
+        help="Remove automatic distillation without deleting Wiki pages.",
+    )
 
     remote = commands.add_parser(
         "remote",
@@ -308,6 +374,8 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
         return 0 if receipt.status is not SyncStatus.FAILED else 1
     if args.command == "auto":
         return dispatch_auto(args, app)
+    if args.command == "auto-distill":
+        return dispatch_auto_distill(args, app)
     if args.command == "remote":
         return dispatch_remote(args, app)
     if args.command == "note":
@@ -462,6 +530,89 @@ def dispatch_auto(args: argparse.Namespace, app: WorkAlmanac) -> int:
         print("Automatic Work Almanac collection removed.")
         return 0
     raise ValueError(f"unsupported auto command: {args.auto_command}")
+
+
+def dispatch_auto_distill(args: argparse.Namespace, app: WorkAlmanac) -> int:
+    if args.auto_distill_command == "install":
+        app.vault.require_path()
+        if not 1 <= args.for_days <= 30:
+            raise ValueError(
+                "automatic distill grant duration must be between 1 and 30 days"
+            )
+        content_access = distill_content_access(args)
+        settings = AutoDistillSettings(
+            interval_minutes=args.every,
+            limit=args.limit,
+            runtime=args.runtime,
+            model=args.model,
+            content_access=content_access,
+            expires_at=datetime.now(UTC) + timedelta(days=args.for_days),
+            max_sessions_total=args.max_total,
+        )
+        app.curators.ensure_ready(settings.runtime)
+        status = app.auto_distillation.install(settings)
+        print(status.message)
+        print(
+            f"Every {settings.interval_minutes} minute(s), up to "
+            f"{settings.limit} pending session(s) via {settings.runtime} "
+            f"with {settings.content_access.value}."
+        )
+        print(
+            f"Standing grant: at most {settings.max_sessions_total} session(s), "
+            f"expires {settings.expires_at.isoformat()}."
+        )
+        return 0
+    if args.auto_distill_command == "status":
+        status = app.auto_distillation.status()
+        print(status.message)
+        if status.settings is not None:
+            settings = status.settings
+            print(
+                f"Every {settings.interval_minutes} minute(s); "
+                f"limit {settings.limit}; runtime {settings.runtime}; "
+                f"content {settings.content_access.value}."
+            )
+            print(
+                f"Standing grant: {settings.sessions_reserved}/"
+                f"{settings.max_sessions_total} session(s); "
+                f"expires {settings.expires_at.isoformat()}."
+            )
+        latest = app.distillation.list(1)
+        if latest:
+            receipt = latest[0]
+            print(
+                f"Latest distill {receipt.run_id}: {receipt.status.value}; "
+                f"{len(receipt.session_ids)} session(s)."
+            )
+        return 0
+    if args.auto_distill_command == "run":
+        app.vault.require_path()
+        receipt = app.auto_distill.run()
+        if receipt.state is AutoDistillRunState.EMPTY:
+            print("No captured sessions are waiting to be distilled.")
+        elif receipt.state is AutoDistillRunState.GRANT_EXHAUSTED:
+            print(
+                "Automatic distillation standing grant is expired or exhausted; "
+                "run `wa auto-distill install` to grant a new bounded window."
+            )
+        elif receipt.state is AutoDistillRunState.SKIPPED_LOCKED:
+            print("Automatic distillation is already running.")
+        else:
+            print(
+                f"Automatic distill succeeded for "
+                f"{len(receipt.session_ids)} session(s)."
+            )
+            if receipt.distill is not None:
+                for path in receipt.distill.changed_files:
+                    print(path.as_posix())
+        return 0
+    if args.auto_distill_command == "remove":
+        app.auto_distillation.remove()
+        print("Automatic distillation removed. Retained Wiki pages were kept.")
+        return 0
+    raise ValueError(
+        f"unsupported auto-distill command: {args.auto_distill_command}"
+    )
 
 
 def dispatch_remote(args: argparse.Namespace, app: WorkAlmanac) -> int:
