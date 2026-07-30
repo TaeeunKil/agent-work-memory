@@ -5,6 +5,7 @@ import pytest
 from workalmanac.app import create_app
 from workalmanac.cli import main
 from workalmanac.services.curators.models import ContentAccess
+from workalmanac.services.vault import snapshot as vault_snapshot
 from workalmanac.settings import WorkAlmanacConfig
 from workalmanac.workflows.distill.prompt import distill_prompt
 
@@ -94,6 +95,23 @@ def test_managed_indexes_are_not_curator_writable(tmp_path: Path):
         )
         with pytest.raises(ValueError, match="forbidden Vault path"):
             app.vault.validate_distill_changes(snapshot)
+
+
+def test_curator_workspace_ignores_large_session_record_layer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    app = wiki_app(tmp_path)
+    vault = app.vault.initialize(tmp_path / "vault")
+    monkeypatch.setattr(vault_snapshot, "MAX_SNAPSHOT_BYTES", 4096)
+    retained = vault / "inbox" / "agent-sessions" / "large.md"
+    retained.write_bytes(b"x" * 8192)
+
+    with app.vault.curator_workspace() as (workspace, _, original):
+        assert not (workspace / "inbox").exists()
+        assert retained.relative_to(vault) not in original.files
+
+    assert retained.read_bytes() == b"x" * 8192
 
 
 def test_distill_prompt_supplies_navigable_session_link(tmp_path: Path):

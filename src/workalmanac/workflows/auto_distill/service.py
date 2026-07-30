@@ -46,15 +46,15 @@ class AutoDistillWorkflow:
                     return AutoDistillRunReceipt(
                         state=AutoDistillRunState.EMPTY
                     )
-                self.automation.reserve_sessions(len(session_ids))
-                receipt = self.distill.run(
-                    DistillSessions(
-                        session_ids=session_ids,
-                        runtime=settings.runtime,
-                        model=settings.model,
-                        content_access=settings.content_access,
-                    )
+                request = DistillSessions(
+                    session_ids=session_ids,
+                    runtime=settings.runtime,
+                    model=settings.model,
+                    content_access=settings.content_access,
                 )
+                self.distill.preflight(request)
+                self.automation.reserve_sessions(len(session_ids))
+                receipt = self.distill.run(request)
         except Timeout:
             return AutoDistillRunReceipt(
                 state=AutoDistillRunState.SKIPPED_LOCKED

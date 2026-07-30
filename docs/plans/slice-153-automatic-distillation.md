@@ -28,6 +28,11 @@ wa auto-distill install \
 - The total-session allowance is reserved before curator execution. A failed
   attempt still consumes that allowance so persistence failures cannot create
   unbounded remote sends.
+- Local preflight checks run before reservation, so an unavailable runtime or
+  unsafe curator workspace does not consume the standing allowance.
+- Retained `inbox/` session records are not copied to the curator workspace and
+  do not count toward its 50 MiB foreground safety limit. The limit applies to
+  the durable Wiki and imported context the curator can actually inspect.
 - The scheduled command contains no session IDs, transcript text, model
   credentials, or content grant. It invokes `wa auto-distill run`, which reads
   private local settings.

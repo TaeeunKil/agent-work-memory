@@ -35,6 +35,15 @@ class DistillSessionsWorkflow:
         self.search = search
         self.wiki = wiki
 
+    def preflight(self, request: DistillSessions) -> None:
+        selected = tuple(
+            (self.sessions.get(session_id), self.sessions.events(session_id))
+            for session_id in request.session_ids
+        )
+        distill_prompt(selected, request.content_access)
+        self.curators.ensure_ready(request.runtime)
+        self.vault.validate_curator_source()
+
     def run(self, request: DistillSessions) -> DistillReceipt:
         selected = tuple(
             (self.sessions.get(session_id), self.sessions.events(session_id))
