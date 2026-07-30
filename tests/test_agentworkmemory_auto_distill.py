@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -135,7 +136,9 @@ def test_auto_distill_cli_installs_runs_and_removes_bounded_remote_grant(
     assert "Automatic distill succeeded for 1 session(s)" in captured.out
     assert "Retained Wiki pages were kept" in captured.out
     assert "Automatic distillation started" in captured.err
-    assert "Codex step finished after" in captured.err
+    assert "Starting Wiki distillation" in captured.err
+    assert "Automatic distillation command finished after" in captured.err
+    assert "Codex step" not in captured.err
 
 
 def test_auto_distill_install_requires_explicit_standing_content_grant(
@@ -198,7 +201,56 @@ def test_auto_distill_run_with_empty_queue_is_a_successful_noop(
     assert "No captured sessions" in capsys.readouterr().out
 
 
-def test_auto_distill_skips_sync_without_reserving_remote_grant(
+def test_auto_distill_waits_for_sync_then_continues(
+    tmp_path: Path,
+):
+    scheduler = FakeAutoDistillScheduler()
+    curator = FakeCurator()
+    app = auto_distill_app(tmp_path, scheduler, curator)
+    app.vault.initialize(tmp_path / "vault")
+    add_note(app, "Pending while sync is active.")
+    app.auto_distillation.install(
+        AutoDistillSettings(
+            interval_minutes=60,
+            limit=1,
+            runtime="codex",
+            content_access=ContentAccess.SELECTED_REMOTE,
+            expires_at=datetime.now(UTC) + timedelta(days=1),
+            max_sessions_total=3,
+        )
+    )
+    lock_acquired = threading.Event()
+    release_lock = threading.Event()
+
+    def hold_sync_lock() -> None:
+        with FileLock(tmp_path / "state" / "sync.lock"):
+            lock_acquired.set()
+            release_lock.wait(timeout=3)
+
+    holder = threading.Thread(target=hold_sync_lock)
+    holder.start()
+    assert lock_acquired.wait(timeout=1)
+    progress: list[str] = []
+
+    def record_progress(message: str) -> None:
+        progress.append(message)
+        if message.startswith("Synchronization is running"):
+            release_lock.set()
+
+    receipt = app.auto_distill.run(
+        progress=record_progress,
+        sync_wait_seconds=2,
+    )
+    holder.join(timeout=1)
+
+    assert receipt.state.value == "succeeded"
+    assert any(message.startswith("Synchronization is running") for message in progress)
+    assert any(message.startswith("Synchronization finished") for message in progress)
+    assert app.auto_distillation.settings().sessions_reserved == 1
+    assert len(curator.requests) == 1
+
+
+def test_auto_distill_sync_wait_timeout_does_not_reserve_remote_grant(
     tmp_path: Path,
 ):
     scheduler = FakeAutoDistillScheduler()
@@ -217,11 +269,45 @@ def test_auto_distill_skips_sync_without_reserving_remote_grant(
         )
     )
     lock = FileLock(tmp_path / "state" / "sync.lock")
+    progress: list[str] = []
 
     with lock:
-        receipt = app.auto_distill.run()
+        receipt = app.auto_distill.run(
+            progress=progress.append,
+            sync_wait_seconds=0,
+        )
 
-    assert receipt.state.value == "skipped-locked"
+    assert receipt.state.value == "sync-wait-expired"
+    assert progress[-1] == "Synchronization did not finish before the wait limit."
+    assert app.auto_distillation.settings().sessions_reserved == 0
+    assert curator.requests == []
+
+
+def test_auto_distill_skips_when_another_distillation_is_running(
+    tmp_path: Path,
+):
+    scheduler = FakeAutoDistillScheduler()
+    curator = FakeCurator()
+    app = auto_distill_app(tmp_path, scheduler, curator)
+    app.vault.initialize(tmp_path / "vault")
+    add_note(app, "Pending behind another distillation.")
+    app.auto_distillation.install(
+        AutoDistillSettings(
+            interval_minutes=60,
+            limit=1,
+            runtime="codex",
+            content_access=ContentAccess.SELECTED_REMOTE,
+            expires_at=datetime.now(UTC) + timedelta(days=1),
+            max_sessions_total=3,
+        )
+    )
+    progress: list[str] = []
+
+    with FileLock(tmp_path / "state" / "auto-distill.lock"):
+        receipt = app.auto_distill.run(progress=progress.append)
+
+    assert receipt.state.value == "distillation-running"
+    assert progress == ["Another Wiki distillation is already running."]
     assert app.auto_distillation.settings().sessions_reserved == 0
     assert curator.requests == []
 
