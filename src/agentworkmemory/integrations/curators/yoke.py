@@ -3,7 +3,7 @@ import os
 import shutil
 import sys
 from contextlib import suppress
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from pydantic import ValidationError
@@ -216,7 +216,7 @@ def apply_windows_curator_output(vault_path: Path, raw: str) -> tuple[Path, ...]
         if not isinstance(relative_text, str) or not isinstance(content, str):
             raise ValueError("Windows curator file proposal needs path and content")
         relative = Path(relative_text)
-        if relative.is_absolute() or relative in seen:
+        if PureWindowsPath(relative_text).is_absolute() or relative in seen:
             raise ValueError("Windows curator file path is invalid or duplicated")
         target = (root / relative).resolve()
         try:
