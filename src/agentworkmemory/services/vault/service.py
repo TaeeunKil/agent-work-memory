@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -35,6 +36,8 @@ DURABLE_DIRECTORIES = frozenset(
 )
 CATALOG_DIRECTORIES = DURABLE_DIRECTORIES | {"imports"}
 CURATOR_IGNORED_ROOTS = frozenset({"inbox"})
+WORKSPACE_CLEANUP_ATTEMPTS = 20
+WORKSPACE_CLEANUP_DELAY_SECONDS = 0.1
 
 
 class VaultService:
@@ -111,17 +114,22 @@ class VaultService:
         )
         workspace_root = self.config.state_dir / "distill-workspaces"
         workspace_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(
+        temporary = Path(
+            tempfile.mkdtemp(
             prefix="distill-",
             dir=workspace_root,
-        ) as temporary:
-            workspace = Path(temporary) / "vault"
+            )
+        )
+        try:
+            workspace = temporary / "vault"
             shutil.copytree(
                 vault_path,
                 workspace,
                 ignore=shutil.ignore_patterns(".git", "inbox"),
             )
             yield workspace, VaultSnapshot.capture(workspace), original
+        finally:
+            remove_curator_workspace(temporary)
 
     def normalize_curator_workspace_permissions(self, workspace: Path) -> None:
         normalize_workspace_permissions(workspace)
@@ -183,6 +191,21 @@ def normalize_workspace_permissions(root: Path) -> None:
             check=False,
             creationflags=hidden_process_creation_flags(),
         )
+
+
+def remove_curator_workspace(root: Path) -> None:
+    """Remove a disposable curator workspace after transient Windows locks."""
+    for attempt in range(WORKSPACE_CLEANUP_ATTEMPTS):
+        normalize_workspace_permissions(root)
+        try:
+            shutil.rmtree(root)
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError:
+            if attempt == WORKSPACE_CLEANUP_ATTEMPTS - 1:
+                raise
+            time.sleep(WORKSPACE_CLEANUP_DELAY_SECONDS)
 
 
 def windows_account_name() -> str:
