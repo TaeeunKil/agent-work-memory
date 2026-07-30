@@ -15,9 +15,10 @@ def distill_prompt(
         "Read existing durable pages before editing.",
         "No-op if the evidence adds no durable knowledge.",
         "",
-        "Allowed writes: README.md and Markdown under projects/, decisions/,",
+        "Allowed writes: non-index Markdown under projects/, decisions/,",
         "problems/, procedures/, systems/, and unfinished/.",
-        "Never edit inbox/agent-sessions/.",
+        "Never edit README.md, Home.md, _index.md, or inbox/agent-sessions/.",
+        "Use Vault-relative [[Wiki links]] between related durable pages.",
         "",
         f"Content access: {content_access.value}",
         "",
@@ -25,6 +26,11 @@ def distill_prompt(
     ]
     remaining = MAX_EVIDENCE_CHARS
     for session, events in selected:
+        session_alias = (
+            session.title
+            if content_access is not ContentAccess.METADATA_ONLY
+            else f"{session.provider} session {session.session_id}"
+        )
         lines.extend(
             (
                 "",
@@ -34,6 +40,9 @@ def distill_prompt(
                 f"- Last observed: {session.modified_at.isoformat()}",
                 f"- Evidence events: {len(events)}",
                 f"- Citation target: work://session/{session.session_id}",
+                "- Session Wiki link: "
+                f"[[inbox/agent-sessions/{session.provider}-{session.session_id}"
+                f"|{session_alias}]]",
             )
         )
         if content_access is ContentAccess.METADATA_ONLY:

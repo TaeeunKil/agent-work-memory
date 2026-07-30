@@ -124,6 +124,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
     if args.command == "init":
         path = app.vault.initialize(args.path)
+        app.wiki.refresh()
         print(f"Initialized Work Almanac Vault at {path}")
         return 0
     if args.command == "import":
@@ -171,6 +172,7 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
             session,
             app.sessions.events(session.session_id),
         )
+        app.wiki.refresh()
         print(f"Saved {session.session_id}")
         print(page)
         return 0

@@ -7,6 +7,7 @@ from workalmanac.integrations.transcripts.models import (
 from workalmanac.services.sessions.models import CollectorCursor
 from workalmanac.services.sessions.service import SessionsService
 from workalmanac.services.vault.service import VaultService
+from workalmanac.services.wiki.service import WikiCatalogService
 from workalmanac.workflows.collect.models import (
     CollectAgentRecords,
     CollectionReceipt,
@@ -18,10 +19,12 @@ class CollectAgentRecordsWorkflow:
         self,
         sessions: SessionsService,
         vault: VaultService,
+        wiki: WikiCatalogService,
         collectors: tuple[TranscriptCollector, ...],
     ):
         self.sessions = sessions
         self.vault = vault
+        self.wiki = wiki
         self.collectors = {collector.provider: collector for collector in collectors}
 
     def collect(self, request: CollectAgentRecords) -> CollectionReceipt:
@@ -74,6 +77,7 @@ class CollectAgentRecordsWorkflow:
                     self.sessions.get(session.session_id),
                     self.sessions.events(session.session_id),
                 )
+        self.wiki.refresh()
         return CollectionReceipt(
             sessions_discovered=discovered_count,
             sessions_updated=updated_count,

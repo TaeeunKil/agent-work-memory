@@ -72,11 +72,16 @@ a curator, sends transcript bodies to a model, or incurs model usage.
 
 ### Slice 146: Wiki navigation
 
-- Give durable pages stable frontmatter and normalized Wiki links.
-- Maintain generated home, project, decision, problem, procedure, system, and
-  unfinished indexes.
-- Add backlinks and source-session references without copying transcript bodies.
-- Keep generated indexes deterministic and safe to rebuild.
+Status: complete on `codex/workalmanac`.
+
+- [x] Parse durable-page frontmatter and normalized Obsidian Wiki links.
+- [x] Maintain generated home, project, decision, problem, procedure, system,
+  and unfinished indexes.
+- [x] Add backlinks and source-session references without copying transcript
+  bodies.
+- [x] Keep generated indexes deterministic and safe to rebuild.
+- [x] Reserve `Home.md` and `_index.md` from curator writes.
+- [x] Withhold title-derived content from metadata-only curator prompts.
 
 ### Slice 147: local curator
 

@@ -10,6 +10,7 @@ from workalmanac.services.sessions.service import (
     stable_event_id,
 )
 from workalmanac.services.vault.service import VaultService
+from workalmanac.services.wiki.service import WikiCatalogService
 
 
 class ImportAgentRecordResult(WorkAlmanacModel):
@@ -19,9 +20,15 @@ class ImportAgentRecordResult(WorkAlmanacModel):
 
 
 class ImportAgentRecordsWorkflow:
-    def __init__(self, sessions: SessionsService, vault: VaultService):
+    def __init__(
+        self,
+        sessions: SessionsService,
+        vault: VaultService,
+        wiki: WikiCatalogService,
+    ):
         self.sessions = sessions
         self.vault = vault
+        self.wiki = wiki
 
     def import_file(self, path: Path) -> ImportAgentRecordResult:
         source_path = path.expanduser().resolve()
@@ -76,6 +83,7 @@ class ImportAgentRecordsWorkflow:
             remembered,
             self.sessions.events(remembered.session_id),
         )
+        self.wiki.refresh()
         return ImportAgentRecordResult(
             session_id=remembered.session_id,
             events_added=inserted,

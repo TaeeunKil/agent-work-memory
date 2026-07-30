@@ -154,6 +154,18 @@ Implemented in
 - [x] no automatic curator or remote model calls;
 - [x] scheduler command, locking, failure, and CLI contract tests.
 
+## Slice 7: Obsidian Wiki navigation
+
+Implemented in
+[Work Almanac v1 Completion Plan](workalmanac-v1-completion-plan.md):
+
+- [x] generated `Home.md` and durable-area indexes;
+- [x] Vault-relative Obsidian Wiki links;
+- [x] source-session navigation and durable-page backlinks;
+- [x] deterministic rebuilds that do not rewrite unchanged files;
+- [x] curator protection for managed navigation pages;
+- [x] metadata-only title-leak regression coverage.
+
 ## Validation record
 
 - Ruff: all new Work Almanac code and changed contract tests pass.

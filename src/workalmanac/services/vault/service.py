@@ -76,7 +76,11 @@ class VaultService:
     def markdown_files(self) -> tuple[Path, ...]:
         vault_path = self.require_path()
         return tuple(
-            sorted(path for path in vault_path.rglob("*.md") if path.is_file())
+            sorted(
+                path
+                for path in vault_path.rglob("*.md")
+                if path.is_file() and not path.is_symlink()
+            )
         )
 
     def snapshot(self) -> VaultSnapshot:
@@ -228,12 +232,11 @@ def ensure_inside(root: Path, target: Path) -> None:
 
 
 def allowed_distill_path(relative: Path) -> bool:
-    if relative.as_posix() == "README.md":
-        return True
     return (
         len(relative.parts) >= 2
         and relative.parts[0] in DURABLE_DIRECTORIES
         and relative.suffix.lower() == ".md"
+        and relative.name != "_index.md"
     )
 
 
@@ -269,6 +272,8 @@ def vault_readme() -> str:
 
 This is the private Wiki for work performed across agents, projects, and
 environments.
+
+Open [[Home]] for the generated Work Almanac navigation page.
 
 ## Areas
 
