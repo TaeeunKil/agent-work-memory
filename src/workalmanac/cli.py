@@ -1,4 +1,5 @@
 import argparse
+import sqlite3
 import sys
 import threading
 import time
@@ -269,14 +270,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config = load_config(args.state_dir)
-    app = (
-        create_app(config)
-        if args.ollama_url is None
-        else create_app(config, ollama_url=args.ollama_url)
-    )
     try:
+        app = (
+            create_app(config)
+            if args.ollama_url is None
+            else create_app(config, ollama_url=args.ollama_url)
+        )
         return dispatch(args, app)
-    except (KeyError, OSError, RuntimeError, ValueError) as error:
+    except (KeyError, OSError, RuntimeError, ValueError, sqlite3.Error) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
@@ -605,7 +606,10 @@ def dispatch_auto_distill(args: argparse.Namespace, app: WorkAlmanac) -> int:
                 "run `wa auto-distill install` to grant a new bounded window."
             )
         elif receipt.state is AutoDistillRunState.SKIPPED_LOCKED:
-            print("Automatic distillation is already running.")
+            print(
+                "Automatic distillation skipped because sync or another "
+                "distillation is running. Retry after it finishes."
+            )
         else:
             print(
                 f"Automatic distill succeeded for "
@@ -643,7 +647,7 @@ def foreground_progress(
             elapsed = format_elapsed(time.monotonic() - started_at)
             print(
                 f"\r{frames[frame % len(frames)]} Codex is working "
-                f"· elapsed {elapsed} · percentage unavailable",
+                f"| elapsed {elapsed} | percentage unavailable",
                 end="",
                 file=output,
                 flush=True,
@@ -666,7 +670,8 @@ def foreground_progress(
         prefix = "\r" if interactive else ""
         state = "finished" if completed else "stopped"
         print(
-            f"{prefix}Codex step {state} after {elapsed}.",
+            f"{prefix}{' ' * 88}\r"
+            f"Codex step {state} after {elapsed}.",
             file=output,
             flush=True,
         )

@@ -1,3 +1,6 @@
+import os
+import shutil
+import sys
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -17,6 +20,7 @@ from yoke import (
     Tools,
     YokeError,
 )
+from yoke.providers.codex import Codex
 
 from workalmanac.agents import distill_instructions
 from workalmanac.integrations.curators.yoke_utf8 import enable_yoke_codex_utf8
@@ -96,11 +100,12 @@ class YokeCuratorAdapter:
         )
 
     def harness(self, cwd: Path) -> Harness:
-        if self.runtime == "codex":
+        surface = curator_surface(self.runtime, sys.platform)
+        if surface == "codex_app_server":
             enable_yoke_codex_utf8()
-        return Harness(
+        harness = Harness(
             provider=self.runtime,
-            surface="codex_app_server" if self.runtime == "codex" else None,
+            surface=surface,
             agent=Agent(
                 instructions=distill_instructions(),
                 tools=Tools(
@@ -119,6 +124,38 @@ class YokeCuratorAdapter:
             cwd=cwd,
             runtime_root=self.runtime_root,
         )
+        if surface == "codex_cli":
+            harness.with_adapter(
+                Codex(
+                    executable=standalone_codex_executable(),
+                    skip_git_repo_check=True,
+                )
+            )
+        return harness
+
+
+def curator_surface(runtime: str, platform: str) -> str | None:
+    if runtime != "codex":
+        return None
+    if platform == "win32":
+        return "codex_cli"
+    return "codex_app_server"
+
+
+def standalone_codex_executable() -> str:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        installed = (
+            Path(local_app_data)
+            / "Programs"
+            / "OpenAI"
+            / "Codex"
+            / "bin"
+            / "codex.exe"
+        )
+        if installed.is_file():
+            return str(installed)
+    return shutil.which("codex") or "codex"
 
 
 def run_options(request: CuratorRunRequest) -> RunOptions:

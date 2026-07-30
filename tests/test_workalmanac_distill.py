@@ -8,7 +8,9 @@ from workalmanac.app import create_app
 from workalmanac.cli import main
 from workalmanac.integrations.curators.yoke import (
     YokeCuratorAdapter,
+    curator_surface,
     run_options,
+    standalone_codex_executable,
 )
 from workalmanac.integrations.curators.yoke_utf8 import enable_yoke_codex_utf8
 from workalmanac.services.curators.models import (
@@ -368,6 +370,30 @@ def test_yoke_curator_is_wiki_write_only_and_offline(tmp_path: Path):
     assert options.provider.codex is not None
     assert options.provider.codex.sandbox == "workspace-write"
     assert options.provider.codex.approval == "never"
+
+
+def test_windows_yoke_curator_uses_standalone_codex_cli(tmp_path: Path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    adapter = YokeCuratorAdapter("codex", tmp_path / "state/curators/codex")
+
+    assert curator_surface("codex", "win32") == "codex_cli"
+    assert curator_surface("codex", "linux") == "codex_app_server"
+    assert adapter.harness(vault).surface == "codex_cli"
+
+
+def test_windows_yoke_curator_prefers_standalone_install(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    executable = (
+        tmp_path / "Programs/OpenAI/Codex/bin/codex.exe"
+    )
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    assert standalone_codex_executable() == str(executable)
 
 
 def test_yoke_codex_process_uses_utf8_instead_of_windows_locale(

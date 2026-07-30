@@ -1,10 +1,12 @@
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from filelock import FileLock
 
 from workalmanac.app import create_app
-from workalmanac.cli import build_parser, dispatch
+from workalmanac.cli import build_parser, dispatch, main
 from workalmanac.integrations.auto_distillation.windows import (
     scheduled_auto_distill_action,
 )
@@ -150,6 +152,23 @@ def test_auto_distill_install_requires_explicit_standing_content_grant(
     assert scheduler.installs == []
 
 
+def test_auto_distill_cli_reports_database_contention_without_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    def fail_create_app(_config):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr("workalmanac.cli.create_app", fail_create_app)
+
+    assert main(("--state-dir", str(tmp_path), "auto-distill", "run")) == 1
+
+    error = capsys.readouterr().err
+    assert "error: database is locked" in error
+    assert "Traceback" not in error
+
+
 def test_auto_distill_run_with_empty_queue_is_a_successful_noop(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -174,6 +193,34 @@ def test_auto_distill_run_with_empty_queue_is_a_successful_noop(
     assert dispatch(args, app) == 0
     assert curator.requests == []
     assert "No captured sessions" in capsys.readouterr().out
+
+
+def test_auto_distill_skips_sync_without_reserving_remote_grant(
+    tmp_path: Path,
+):
+    scheduler = FakeAutoDistillScheduler()
+    curator = FakeCurator()
+    app = auto_distill_app(tmp_path, scheduler, curator)
+    app.vault.initialize(tmp_path / "vault")
+    add_note(app, "Pending while sync is active.")
+    app.auto_distillation.install(
+        AutoDistillSettings(
+            interval_minutes=60,
+            limit=1,
+            runtime="codex",
+            content_access=ContentAccess.SELECTED_REMOTE,
+            expires_at=datetime.now(UTC) + timedelta(days=1),
+            max_sessions_total=3,
+        )
+    )
+    lock = FileLock(tmp_path / "state" / "sync.lock")
+
+    with lock:
+        receipt = app.auto_distill.run()
+
+    assert receipt.state.value == "skipped-locked"
+    assert app.auto_distillation.settings().sessions_reserved == 0
+    assert curator.requests == []
 
 
 def test_auto_distill_stops_after_bounded_standing_grant(

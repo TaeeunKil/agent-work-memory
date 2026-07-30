@@ -50,6 +50,22 @@ class SynchronizationService:
             )
         return self.store.remember(receipt.model_copy(update=update))
 
+    def skipped_locked(
+        self,
+        *,
+        providers: tuple[AgentProviderId, ...],
+        include_content: bool,
+    ) -> SyncReceipt:
+        now = datetime.now(UTC)
+        return SyncReceipt(
+            run_id=f"syn_{uuid4().hex}",
+            providers=providers,
+            include_content=include_content,
+            status=SyncStatus.SKIPPED_LOCKED,
+            started_at=now,
+            finished_at=now,
+        )
+
     def latest(self) -> SyncReceipt | None:
         return self.store.latest()
 

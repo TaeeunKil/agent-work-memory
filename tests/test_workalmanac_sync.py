@@ -61,10 +61,18 @@ def test_sync_is_locked_incremental_and_searchable(tmp_path: Path):
     assert any(result.kind == "session" for result in app.search.find("decision"))
 
 
-def test_overlapping_sync_exits_without_collecting(tmp_path: Path):
+def test_overlapping_sync_exits_without_collecting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
     app = sync_app(tmp_path)
     app.vault.initialize(tmp_path / "vault")
     lock = FileLock(tmp_path / "state" / "sync.lock")
+
+    def fail_begin(**_kwargs):
+        raise AssertionError("overlapping sync must not touch the database")
+
+    monkeypatch.setattr(app.synchronization, "begin", fail_begin)
 
     with lock:
         receipt = app.sync.run(
