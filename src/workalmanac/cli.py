@@ -4,11 +4,14 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from workalmanac.app import WorkAlmanac, create_app
+from workalmanac.services.automation.models import AutoSyncSettings
 from workalmanac.services.curators.models import ContentAccess
 from workalmanac.services.sessions.models import AgentProvider
+from workalmanac.services.synchronization.models import SyncReceipt, SyncStatus
 from workalmanac.settings import load_config
 from workalmanac.workflows.collect import CollectAgentRecords
 from workalmanac.workflows.distill import DistillSessions
+from workalmanac.workflows.sync import SyncAgentRecords
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -56,6 +59,26 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path.home(),
         help="Home directory containing provider session stores.",
     )
+
+    sync = commands.add_parser(
+        "sync",
+        help="Run one locked incremental collection and refresh search.",
+    )
+    add_collection_options(sync)
+
+    auto = commands.add_parser(
+        "auto",
+        help="Manage automatic Work Almanac collection.",
+    )
+    auto_commands = auto.add_subparsers(dest="auto_command", required=True)
+    auto_install = auto_commands.add_parser(
+        "install",
+        help="Install periodic collection with the operating-system scheduler.",
+    )
+    auto_install.add_argument("--every", type=int, default=5, metavar="MINUTES")
+    add_collection_options(auto_install)
+    auto_commands.add_parser("status", help="Show scheduler and last-sync status.")
+    auto_commands.add_parser("remove", help="Remove automatic collection.")
 
     import_records = commands.add_parser(
         "import",
@@ -130,6 +153,13 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
         else:
             print("No durable Wiki pages changed.")
         return 0
+    if args.command == "sync":
+        app.vault.require_path()
+        receipt = app.sync.run(sync_request(args))
+        print_sync_receipt(receipt)
+        return 0 if receipt.status is not SyncStatus.FAILED else 1
+    if args.command == "auto":
+        return dispatch_auto(args, app)
     if args.command == "note":
         app.vault.require_path()
         session = app.sessions.add_manual_note(
@@ -190,6 +220,76 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
                 print(f"        {result.excerpt}")
         return 0
     raise ValueError(f"unsupported command: {args.command}")
+
+
+def add_collection_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--from",
+        dest="providers",
+        action="append",
+        choices=(AgentProvider.CODEX, AgentProvider.CLAUDE),
+        help="Agent provider to collect. Repeat to select more than one.",
+    )
+    parser.add_argument(
+        "--include-content",
+        action="store_true",
+        help="Retain transcript bodies in private local state and Wiki.",
+    )
+    parser.add_argument(
+        "--home",
+        type=Path,
+        default=Path.home(),
+        help="Home directory containing provider session stores.",
+    )
+
+
+def sync_request(args: argparse.Namespace) -> SyncAgentRecords:
+    return SyncAgentRecords(
+        providers=tuple(args.providers or (AgentProvider.CODEX, AgentProvider.CLAUDE)),
+        home=args.home.expanduser().resolve(),
+        include_content=args.include_content,
+    )
+
+
+def dispatch_auto(args: argparse.Namespace, app: WorkAlmanac) -> int:
+    if args.auto_command == "install":
+        app.vault.require_path()
+        settings = AutoSyncSettings(
+            interval_minutes=args.every,
+            providers=tuple(
+                args.providers or (AgentProvider.CODEX, AgentProvider.CLAUDE)
+            ),
+            home=args.home.expanduser().resolve(),
+            include_content=args.include_content,
+        )
+        status = app.automation.install(settings)
+        print(status.message)
+        return 0
+    if args.auto_command == "status":
+        status = app.automation.status()
+        print(status.message)
+        latest = app.synchronization.latest()
+        if latest is None:
+            print("No sync has run yet.")
+        else:
+            print_sync_receipt(latest)
+        return 0
+    if args.auto_command == "remove":
+        app.automation.remove()
+        print("Automatic Work Almanac collection removed.")
+        return 0
+    raise ValueError(f"unsupported auto command: {args.auto_command}")
+
+
+def print_sync_receipt(receipt: SyncReceipt) -> None:
+    status = receipt.status.value
+    print(
+        f"Sync {receipt.run_id}: {status}; "
+        f"{receipt.sessions_discovered} session(s), "
+        f"{receipt.events_added} new event(s)."
+    )
+    if receipt.error_type is not None:
+        print(f"Failure type: {receipt.error_type}")
 
 
 if __name__ == "__main__":

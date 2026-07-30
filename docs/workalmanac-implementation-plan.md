@@ -142,6 +142,18 @@ Implemented in [Work Almanac Distill Slice](workalmanac-distill-plan.md):
 - [x] `wa distill` foreground CLI;
 - [x] fake-curator safety tests without paid provider calls.
 
+## Slice 6: automatic retention
+
+Implemented in
+[Work Almanac v1 Completion Plan](workalmanac-v1-completion-plan.md):
+
+- [x] locked, idempotent `wa sync`;
+- [x] body-free synchronization receipts and last-run status;
+- [x] Windows Task Scheduler install, status, and removal;
+- [x] explicit scheduled transcript-content opt-in;
+- [x] no automatic curator or remote model calls;
+- [x] scheduler command, locking, failure, and CLI contract tests.
+
 ## Validation record
 
 - Ruff: all new Work Almanac code and changed contract tests pass.
