@@ -6,6 +6,7 @@ from workalmanac.integrations.curators import (
     OllamaCuratorAdapter,
     YokeCuratorAdapter,
 )
+from workalmanac.integrations.remotes import SshRemoteSnapshotAdapter
 from workalmanac.integrations.transcripts import (
     ClaudeTranscriptCollector,
     CodexTranscriptCollector,
@@ -18,6 +19,9 @@ from workalmanac.services.curators.service import CuratorsService
 from workalmanac.services.diagnostics import DiagnosticsService
 from workalmanac.services.distillation.service import DistillationService
 from workalmanac.services.distillation.store import DistillationStore
+from workalmanac.services.remotes.ports import RemoteSnapshotAdapter
+from workalmanac.services.remotes.service import RemotesService
+from workalmanac.services.remotes.store import RemoteStore
 from workalmanac.services.search import SearchService
 from workalmanac.services.sessions import SessionsService
 from workalmanac.services.sessions.store import SessionsStore
@@ -31,6 +35,7 @@ from workalmanac.workflows.collect import CollectAgentRecordsWorkflow
 from workalmanac.workflows.distill import DistillSessionsWorkflow
 from workalmanac.workflows.import_legacy import ImportLegacyAlmanacWorkflow
 from workalmanac.workflows.import_records import ImportAgentRecordsWorkflow
+from workalmanac.workflows.remote_sync import SyncRemoteRecordsWorkflow
 from workalmanac.workflows.setup import SetupWorkAlmanacWorkflow
 from workalmanac.workflows.sync import SyncAgentRecordsWorkflow
 
@@ -49,6 +54,8 @@ class WorkAlmanac:
         distillation: DistillationService,
         import_records: ImportAgentRecordsWorkflow,
         import_legacy: ImportLegacyAlmanacWorkflow,
+        remotes: RemotesService,
+        remote_sync: SyncRemoteRecordsWorkflow,
         search: SearchService,
         setup: SetupWorkAlmanacWorkflow,
         sync: SyncAgentRecordsWorkflow,
@@ -66,6 +73,8 @@ class WorkAlmanac:
         self.distillation = distillation
         self.import_records = import_records
         self.import_legacy = import_legacy
+        self.remotes = remotes
+        self.remote_sync = remote_sync
         self.search = search
         self.setup = setup
         self.sync = sync
@@ -83,6 +92,7 @@ def create_app(
     *,
     curator_adapters: Sequence[CuratorAdapter] | None = None,
     scheduler_adapter: SchedulerAdapter | None = None,
+    remote_adapter: RemoteSnapshotAdapter | None = None,
     ollama_url: str | None = None,
 ) -> WorkAlmanac:
     resolved = config or load_config()
@@ -97,6 +107,11 @@ def create_app(
         ClaudeTranscriptCollector(),
     )
     collect = CollectAgentRecordsWorkflow(sessions, vault, wiki, collectors)
+    remotes = RemotesService(
+        RemoteStore(resolved.state_dir / "remotes"),
+        remote_adapter or SshRemoteSnapshotAdapter(),
+    )
+    remote_sync = SyncRemoteRecordsWorkflow(remotes, collect)
     import_records = ImportAgentRecordsWorkflow(sessions, vault, wiki)
     search = SearchService(resolved.database_path, sessions, vault)
     import_legacy = ImportLegacyAlmanacWorkflow(vault, wiki, search)
@@ -106,6 +121,7 @@ def create_app(
     viewer = ViewerService(sessions, vault, wiki, synchronization)
     sync = SyncAgentRecordsWorkflow(
         collect,
+        remote_sync,
         search,
         synchronization,
         resolved.state_dir / "sync.lock",
@@ -134,7 +150,15 @@ def create_app(
         )
     )
     curators = CuratorsService(adapters)
-    diagnostics = DiagnosticsService(resolved, vault, automation, curators)
+    diagnostics = DiagnosticsService(
+        resolved,
+        vault,
+        automation,
+        curators,
+        sessions,
+        wiki,
+        remotes,
+    )
     distillation = DistillationService(DistillationStore(resolved.database_path))
     distill = DistillSessionsWorkflow(
         sessions,
@@ -155,6 +179,8 @@ def create_app(
         distillation=distillation,
         import_records=import_records,
         import_legacy=import_legacy,
+        remotes=remotes,
+        remote_sync=remote_sync,
         search=search,
         setup=setup,
         sync=sync,

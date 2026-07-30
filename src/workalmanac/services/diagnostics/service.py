@@ -6,7 +6,11 @@ from workalmanac.services.diagnostics.models import (
     DiagnosticCheck,
     DiagnosticStatus,
 )
+from workalmanac.services.remotes.models import RemoteSyncState
+from workalmanac.services.remotes.service import RemotesService
+from workalmanac.services.sessions.service import SessionsService
 from workalmanac.services.vault.service import VaultService
+from workalmanac.services.wiki.service import WikiCatalogService
 from workalmanac.settings import WorkAlmanacConfig
 
 
@@ -17,11 +21,17 @@ class DiagnosticsService:
         vault: VaultService,
         automation: AutomationService,
         curators: CuratorsService,
+        sessions: SessionsService,
+        wiki: WikiCatalogService,
+        remotes: RemotesService,
     ):
         self.config = config
         self.vault = vault
         self.automation = automation
         self.curators = curators
+        self.sessions = sessions
+        self.wiki = wiki
+        self.remotes = remotes
 
     def run(
         self,
@@ -35,6 +45,8 @@ class DiagnosticsService:
             transcript_check(home / ".codex" / "sessions", "codex"),
             transcript_check(home / ".claude" / "projects", "claude"),
             automation_check(self.automation),
+            knowledge_check(self.sessions, self.wiki),
+            remotes_check(self.remotes),
         ]
         if include_runtimes:
             checks.extend(
@@ -115,4 +127,97 @@ def automation_check(automation: AutomationService) -> DiagnosticCheck:
         name="automation",
         status=level,
         message=status.message,
+    )
+
+
+def knowledge_check(
+    sessions: SessionsService,
+    wiki: WikiCatalogService,
+) -> DiagnosticCheck:
+    retained = sessions.list()
+    captured = tuple(session for session in retained if session.content_captured)
+    pending = tuple(
+        session
+        for session in captured
+        if session.distilled_at is None
+    )
+    try:
+        durable = tuple(
+            page for page in wiki.pages() if page.category != "imports"
+        )
+    except RuntimeError:
+        durable = ()
+    if durable:
+        return DiagnosticCheck(
+            name="knowledge",
+            status=DiagnosticStatus.OK,
+            message=(
+                f"{len(durable)} durable Wiki page(s); "
+                f"{len(pending)} captured session(s) await distillation."
+            ),
+        )
+    if pending:
+        return DiagnosticCheck(
+            name="knowledge",
+            status=DiagnosticStatus.WARNING,
+            message=(
+                f"{len(pending)} captured session(s), but no durable Wiki pages. "
+                "Sync retains evidence only; use `wa distill <session-id> "
+                "--using <runtime>` to promote selected work."
+            ),
+        )
+    if retained:
+        return DiagnosticCheck(
+            name="knowledge",
+            status=DiagnosticStatus.WARNING,
+            message=(
+                f"{len(retained)} session(s) retained as metadata only. "
+                "Use `wa sync --include-content` before distillation."
+            ),
+        )
+    return DiagnosticCheck(
+        name="knowledge",
+        status=DiagnosticStatus.WARNING,
+        message="No sessions retained yet; run `wa sync --include-content`.",
+    )
+
+
+def remotes_check(remotes: RemotesService) -> DiagnosticCheck:
+    overviews = remotes.list()
+    if not overviews:
+        return DiagnosticCheck(
+            name="remotes",
+            status=DiagnosticStatus.OK,
+            message="No SSH remotes registered.",
+        )
+    failed = sum(
+        overview.status.state is RemoteSyncState.FAILED
+        for overview in overviews
+    )
+    waiting = sum(
+        overview.status.state is RemoteSyncState.NEVER
+        for overview in overviews
+    )
+    if failed:
+        return DiagnosticCheck(
+            name="remotes",
+            status=DiagnosticStatus.WARNING,
+            message=(
+                f"{len(overviews)} registered; {failed} failed most recently. "
+                "Run `wa remote list` for bounded status details."
+            ),
+        )
+    if waiting:
+        return DiagnosticCheck(
+            name="remotes",
+            status=DiagnosticStatus.WARNING,
+            message=(
+                f"{len(overviews)} registered; {waiting} not synced yet. "
+                "Run `wa remote sync`."
+            ),
+        )
+    return DiagnosticCheck(
+        name="remotes",
+        status=DiagnosticStatus.OK,
+        message=f"{len(overviews)} SSH remote(s) synced successfully.",
     )

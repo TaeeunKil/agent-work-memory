@@ -13,6 +13,7 @@ from workalmanac.settings import load_config
 from workalmanac.workflows.collect import CollectAgentRecords
 from workalmanac.workflows.distill import DistillSessions
 from workalmanac.workflows.import_legacy import ImportLegacyAlmanac
+from workalmanac.workflows.remote_sync import SyncRemoteRecords
 from workalmanac.workflows.setup import SetupWorkAlmanac
 from workalmanac.workflows.sync import SyncAgentRecords
 
@@ -95,6 +96,43 @@ def build_parser() -> argparse.ArgumentParser:
     add_collection_options(auto_install)
     auto_commands.add_parser("status", help="Show scheduler and last-sync status.")
     auto_commands.add_parser("remove", help="Remove automatic collection.")
+
+    remote = commands.add_parser(
+        "remote",
+        help="Manage explicit read-only SSH transcript sources.",
+    )
+    remote_commands = remote.add_subparsers(
+        dest="remote_command",
+        required=True,
+    )
+    remote_add = remote_commands.add_parser(
+        "add",
+        help="Register an SSH config alias or user@host.",
+    )
+    remote_add.add_argument("target")
+    add_provider_options(remote_add)
+    remote_commands.add_parser("list", help="List registered SSH remotes.")
+    remote_status = remote_commands.add_parser(
+        "status",
+        help="Show bounded sync status for one SSH remote.",
+    )
+    remote_status.add_argument("target")
+    remote_sync = remote_commands.add_parser(
+        "sync",
+        help="Fetch changed transcripts from registered SSH remotes.",
+    )
+    remote_sync.add_argument("target", nargs="?")
+    add_provider_options(remote_sync)
+    remote_sync.add_argument(
+        "--include-content",
+        action="store_true",
+        help="Retain transcript bodies in private local state and Wiki.",
+    )
+    remote_remove = remote_commands.add_parser(
+        "remove",
+        help="Unregister an SSH remote without deleting retained records.",
+    )
+    remote_remove.add_argument("target")
 
     import_records = commands.add_parser(
         "import",
@@ -252,6 +290,8 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
         return 0 if receipt.status is not SyncStatus.FAILED else 1
     if args.command == "auto":
         return dispatch_auto(args, app)
+    if args.command == "remote":
+        return dispatch_remote(args, app)
     if args.command == "note":
         app.vault.require_path()
         session = app.sessions.add_manual_note(
@@ -316,13 +356,7 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
 
 
 def add_collection_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--from",
-        dest="providers",
-        action="append",
-        choices=(AgentProvider.CODEX, AgentProvider.CLAUDE),
-        help="Agent provider to collect. Repeat to select more than one.",
-    )
+    add_provider_options(parser)
     parser.add_argument(
         "--include-content",
         action="store_true",
@@ -333,6 +367,16 @@ def add_collection_options(parser: argparse.ArgumentParser) -> None:
         type=Path,
         default=Path.home(),
         help="Home directory containing provider session stores.",
+    )
+
+
+def add_provider_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--from",
+        dest="providers",
+        action="append",
+        choices=(AgentProvider.CODEX, AgentProvider.CLAUDE),
+        help="Agent provider to collect. Repeat to select more than one.",
     )
 
 
@@ -380,6 +424,77 @@ def dispatch_auto(args: argparse.Namespace, app: WorkAlmanac) -> int:
         print("Automatic Work Almanac collection removed.")
         return 0
     raise ValueError(f"unsupported auto command: {args.auto_command}")
+
+
+def dispatch_remote(args: argparse.Namespace, app: WorkAlmanac) -> int:
+    if args.remote_command == "add":
+        host = app.remotes.register(
+            args.target,
+            tuple(
+                args.providers or (AgentProvider.CODEX, AgentProvider.CLAUDE)
+            ),
+        )
+        providers = ", ".join(host.providers)
+        print(f"Registered {host.target} ({providers}).")
+        print("It will be included in future `wa sync` and automatic sync runs.")
+        return 0
+    if args.remote_command == "list":
+        overviews = app.remotes.list()
+        if not overviews:
+            print("No SSH remotes registered.")
+            return 0
+        for overview in overviews:
+            providers = ",".join(overview.host.providers)
+            status = overview.status
+            print(
+                f"{overview.host.target:<28} {status.state.value:<9} "
+                f"{providers:<13} {status.files_observed} file(s)"
+            )
+        return 0
+    if args.remote_command == "status":
+        overview = app.remotes.overview(app.remotes.get(args.target))
+        status = overview.status
+        print(f"target: {overview.host.target}")
+        print(f"providers: {', '.join(overview.host.providers)}")
+        print(f"state: {status.state.value}")
+        print(f"last attempt: {status.last_attempt_at or 'never'}")
+        print(f"last success: {status.last_success_at or 'never'}")
+        print(f"files observed: {status.files_observed}")
+        print(f"last download: {status.files_downloaded} file(s)")
+        if status.error_type is not None:
+            print(f"failure type: {status.error_type}")
+        return 0
+    if args.remote_command == "sync":
+        app.vault.require_path()
+        receipt = app.remote_sync.run(
+            SyncRemoteRecords(
+                targets=(args.target,) if args.target else (),
+                providers=(
+                    tuple(args.providers) if args.providers is not None else None
+                ),
+                include_content=args.include_content,
+            )
+        )
+        app.search.refresh()
+        if not receipt.remotes:
+            print("No matching SSH remotes registered.")
+            return 0
+        for result in receipt.remotes:
+            if result.succeeded:
+                print(
+                    f"{result.target}: synced; "
+                    f"{result.files_downloaded} file(s) downloaded, "
+                    f"{result.events_added} event(s) added."
+                )
+            else:
+                print(f"{result.target}: failed ({result.error_type}).")
+        return int(any(not result.succeeded for result in receipt.remotes))
+    if args.remote_command == "remove":
+        if not app.remotes.remove(args.target):
+            raise KeyError(f"unknown remote host: {args.target}")
+        print(f"Unregistered {args.target}. Retained local records were kept.")
+        return 0
+    raise ValueError(f"unsupported remote command: {args.remote_command}")
 
 
 def print_sync_receipt(receipt: SyncReceipt) -> None:

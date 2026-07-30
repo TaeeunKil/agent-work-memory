@@ -98,6 +98,38 @@ unfinished/                    concrete next work
 imports/repository-almanacs/   isolated legacy Wiki review
 ```
 
+Synchronization fills `inbox/agent-sessions` and the private search database.
+It does not create pages in `projects`, `decisions`, `problems`, `procedures`,
+`systems`, or `unfinished`. Those are durable knowledge and change only when
+you explicitly distill selected sessions. `wa doctor` reports how many
+captured sessions are waiting for that step.
+
+## Collect from SSH machines
+
+Work Almanac can pull Codex and Claude JSONL transcripts from explicit OpenSSH
+targets. Use an alias already configured in `~/.ssh/config`, or `user@host`:
+
+```powershell
+wa remote add agent-box
+wa remote list
+wa remote sync agent-box --include-content
+```
+
+Once registered, the remote is included automatically in ordinary `wa sync`
+and installed automatic-sync runs. Use these commands to inspect or remove it:
+
+```powershell
+wa remote status agent-box
+wa remote remove agent-box
+```
+
+The target must already be trusted in `known_hosts` and support non-interactive
+key authentication plus `python3`. Work Almanac uses OpenSSH batch mode, never
+prompts for a password, does not scan every SSH config entry, and does not
+write to the remote machine. It first reads a bounded manifest, then downloads
+only changed `.jsonl` files into private local state. Removing a registration
+keeps records already retained in the Vault and database.
+
 ## Distill selected work
 
 Metadata-only is the default:
@@ -172,7 +204,8 @@ Two locations contain private data:
 
 - the configured Markdown Vault;
 - `%LOCALAPPDATA%\WorkAlmanac`, which contains SQLite state, retained event
-  bodies, cursors, receipts, and disposable-runtime state.
+  bodies, cursors, receipts, SSH transcript snapshots, and disposable-runtime
+  state.
 
 Back up the Vault for durable knowledge. Back up local state only to encrypted
 storage if you need the retained evidence database as well. Do not publish the
