@@ -153,6 +153,15 @@ class SessionsService:
     def list(self) -> tuple[AgentSession, ...]:
         return self.store.list_sessions()
 
+    def pending_distillation(self, limit: int) -> tuple[AgentSession, ...]:
+        if not 1 <= limit <= 20:
+            raise ValueError("pending distill limit must be between 1 and 20")
+        return tuple(
+            session
+            for session in self.list()
+            if session.content_captured and session.distilled_at is None
+        )[:limit]
+
     def events(self, session_id: str) -> tuple[AgentEvent, ...]:
         return self.store.events_for(session_id)
 

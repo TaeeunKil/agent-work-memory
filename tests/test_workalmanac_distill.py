@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -128,6 +129,28 @@ def test_selected_content_is_bounded_into_curator_prompt(tmp_path: Path):
     assert "Selected evidence reaches the local curator." in adapter.requests[0].prompt
 
 
+def test_batch_distill_divides_evidence_budget_across_sessions(
+    tmp_path: Path,
+):
+    adapter = FakeCuratorAdapter()
+    app = distill_app(tmp_path, adapter)
+    app.vault.initialize(tmp_path / "vault")
+    first = note_session(app, "A" * 120_000)
+    second = note_session(app, "SECOND-SESSION-EVIDENCE")
+
+    app.distill.run(
+        DistillSessions(
+            session_ids=(first.session_id, second.session_id),
+            runtime=adapter.runtime,
+            content_access=ContentAccess.SELECTED_LOCAL,
+        )
+    )
+
+    prompt = adapter.requests[0].prompt
+    assert "[Evidence truncated at curator boundary.]" in prompt
+    assert "SECOND-SESSION-EVIDENCE" in prompt
+
+
 def test_forbidden_inbox_change_is_rolled_back(tmp_path: Path):
     adapter = FakeCuratorAdapter(mutate=overwrite_inbox)
     app = distill_app(tmp_path, adapter)
@@ -225,6 +248,96 @@ def test_distill_cli_maps_explicit_remote_content_grant(
     assert exit_code == 0
     assert adapter.requests[0].content_access is ContentAccess.SELECTED_REMOTE
     assert "Distill dst_" in capsys.readouterr().out
+
+
+def test_distill_cli_selects_newest_pending_sessions_with_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    adapter = FakeCuratorAdapter()
+    app = distill_app(tmp_path, adapter)
+    app.vault.initialize(tmp_path / "vault")
+    oldest = note_session(app, "Old pending evidence.")
+    middle = note_session(app, "Middle pending evidence.")
+    newest = note_session(app, "Newest pending evidence.")
+    metadata_only = app.sessions.remember_discovered(
+        provider="codex",
+        provider_session_id="metadata-only",
+        cwd=None,
+        source_path=tmp_path / "metadata.jsonl",
+        modified_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+    monkeypatch.setattr("workalmanac.cli.create_app", lambda config: app)
+
+    exit_code = main(
+        (
+            "--state-dir",
+            str(tmp_path / "state"),
+            "distill",
+            "--pending",
+            "--limit",
+            "2",
+            "--using",
+            adapter.runtime,
+            "--allow-remote-content",
+        )
+    )
+
+    assert exit_code == 0
+    assert app.sessions.get(newest.session_id).distilled_at is not None
+    assert app.sessions.get(middle.session_id).distilled_at is not None
+    assert app.sessions.get(oldest.session_id).distilled_at is None
+    assert app.sessions.get(metadata_only.session_id).distilled_at is None
+    output = capsys.readouterr().out
+    assert "Selected 2 pending session(s)" in output
+    assert newest.session_id in output
+    assert middle.session_id in output
+
+
+def test_distill_cli_pending_empty_queue_is_a_noop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    adapter = FakeCuratorAdapter()
+    app = distill_app(tmp_path, adapter)
+    app.vault.initialize(tmp_path / "vault")
+    monkeypatch.setattr("workalmanac.cli.create_app", lambda config: app)
+
+    exit_code = main(("distill", "--pending", "--using", adapter.runtime))
+
+    assert exit_code == 0
+    assert adapter.requests == []
+    assert "No captured sessions" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "arguments, message",
+    (
+        (("distill",), "session ids or --pending"),
+        (("distill", "ses_example", "--pending"), "cannot be combined"),
+        (("distill", "ses_example", "--limit", "2"), "requires --pending"),
+        (("distill", "--pending", "--limit", "0"), "between 1 and 20"),
+        (("distill", "--pending", "--limit", "21"), "between 1 and 20"),
+    ),
+)
+def test_distill_cli_rejects_invalid_selection_options(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    arguments: tuple[str, ...],
+    message: str,
+):
+    adapter = FakeCuratorAdapter()
+    app = distill_app(tmp_path, adapter)
+    app.vault.initialize(tmp_path / "vault")
+    monkeypatch.setattr("workalmanac.cli.create_app", lambda config: app)
+
+    assert main(arguments) == 1
+
+    assert message in capsys.readouterr().err
+    assert adapter.requests == []
 
 
 def test_yoke_curator_is_wiki_write_only_and_offline(tmp_path: Path):

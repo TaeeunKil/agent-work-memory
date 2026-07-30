@@ -145,6 +145,17 @@ wa distill ses_... --using codex --allow-remote-content
 wa distill ses_... --using claude --allow-remote-content
 ```
 
+Select the newest captured sessions that have not been distilled without
+copying IDs by hand:
+
+```powershell
+wa distill --pending --limit 3 --using codex --allow-remote-content
+```
+
+`--pending` defaults to three sessions and accepts a limit from 1 through 20.
+The selected IDs are printed before curator execution. It never includes
+metadata-only or already-distilled sessions.
+
 Use a local Ollama model:
 
 ```powershell
