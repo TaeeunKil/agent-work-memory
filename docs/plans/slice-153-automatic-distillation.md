@@ -36,6 +36,9 @@ wa auto-distill install \
 - Foreground runs immediately announce the selected runtime and show elapsed
   time while the curator is working. No percentage is invented because Codex
   does not expose completion progress for a turn.
+- Windows scheduled runs use `pythonw.exe`, so periodic sync and distillation
+  do not open terminal tabs. Their bounded UTF-8 logs live under
+  `<state-dir>/logs/scheduled-sync.log` and `scheduled-auto-distill.log`.
 - Curator-created files are retried briefly when Windows still holds a write
   lock. A persistent lock becomes a concise CLI error instead of a traceback.
 - The scheduled command contains no session IDs, transcript text, model

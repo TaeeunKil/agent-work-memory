@@ -139,7 +139,8 @@ def test_scheduled_action_uses_module_and_no_remote_distillation(tmp_path: Path)
 
     action = scheduled_sync_action(settings, tmp_path / "State Dir")
 
-    assert "-m workalmanac.cli" in action
+    assert "pythonw.exe" in action
+    assert "-m workalmanac.scheduled" in action
     assert "--from codex" in action
     assert "--from claude" in action
     assert "--include-content" not in action

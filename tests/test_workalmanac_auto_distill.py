@@ -270,7 +270,8 @@ def test_scheduled_auto_distill_action_contains_only_private_state_pointer(
 ):
     action = scheduled_auto_distill_action(tmp_path / "Private State")
 
-    assert "-m workalmanac.cli" in action
+    assert "pythonw.exe" in action
+    assert "-m workalmanac.scheduled" in action
     assert "auto-distill run" in action
     assert str(tmp_path / "Private State") in action
     assert "--allow-remote-content" not in action
