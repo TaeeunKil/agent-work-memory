@@ -166,6 +166,19 @@ Implemented in
 - [x] curator protection for managed navigation pages;
 - [x] metadata-only title-leak regression coverage.
 
+## Slice 8: local LLM curation
+
+Implemented in
+[Work Almanac v1 Completion Plan](workalmanac-v1-completion-plan.md):
+
+- [x] loopback-only Ollama adapter and model discovery;
+- [x] explicit `--allow-local-content` policy;
+- [x] structured complete-file Markdown changes without model tools;
+- [x] bounded existing-Wiki context and response sizes;
+- [x] the same disposable workspace, validation, and rollback path;
+- [x] `wa runtimes` readiness diagnostics;
+- [x] mocked HTTP integration tests without a real model call.
+
 ## Validation record
 
 - Ruff: all new Work Almanac code and changed contract tests pass.

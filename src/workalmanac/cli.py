@@ -24,6 +24,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Override the local Work Almanac state directory.",
     )
+    parser.add_argument(
+        "--ollama-url",
+        help="Loopback Ollama origin (default: http://127.0.0.1:11434).",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
 
     init = commands.add_parser("init", help="Initialize the private Wiki Vault.")
@@ -93,11 +97,19 @@ def build_parser() -> argparse.ArgumentParser:
     distill.add_argument("session_ids", nargs="+")
     distill.add_argument("--using", dest="runtime", default="codex")
     distill.add_argument("--model")
-    distill.add_argument(
+    content_access = distill.add_mutually_exclusive_group()
+    content_access.add_argument(
+        "--allow-local-content",
+        action="store_true",
+        help="Allow selected session bodies to be sent to a local runtime.",
+    )
+    content_access.add_argument(
         "--allow-remote-content",
         action="store_true",
         help="Allow selected session event bodies to be sent to the runtime.",
     )
+
+    commands.add_parser("runtimes", help="Check available curator runtimes.")
 
     commands.add_parser("sessions", help="List retained agent sessions.")
 
@@ -113,7 +125,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config = load_config(args.state_dir)
-    app = create_app(config)
+    app = (
+        create_app(config)
+        if args.ollama_url is None
+        else create_app(config, ollama_url=args.ollama_url)
+    )
     try:
         return dispatch(args, app)
     except (KeyError, RuntimeError, ValueError) as error:
@@ -140,11 +156,7 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
                 session_ids=tuple(args.session_ids),
                 runtime=args.runtime,
                 model=args.model,
-                content_access=(
-                    ContentAccess.SELECTED_REMOTE
-                    if args.allow_remote_content
-                    else ContentAccess.METADATA_ONLY
-                ),
+                content_access=distill_content_access(args),
             )
         )
         print(f"Distill {receipt.run_id}: {receipt.status.value}")
@@ -153,6 +165,13 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
                 print(path.as_posix())
         else:
             print("No durable Wiki pages changed.")
+        return 0
+    if args.command == "runtimes":
+        for readiness in app.curators.readiness():
+            status = "ready" if readiness.available else "unavailable"
+            print(f"{readiness.runtime:<8} {status:<11} {readiness.message}")
+            if readiness.repair:
+                print(f"                     {readiness.repair}")
         return 0
     if args.command == "sync":
         app.vault.require_path()
@@ -243,6 +262,14 @@ def add_collection_options(parser: argparse.ArgumentParser) -> None:
         default=Path.home(),
         help="Home directory containing provider session stores.",
     )
+
+
+def distill_content_access(args: argparse.Namespace) -> ContentAccess:
+    if args.allow_local_content:
+        return ContentAccess.SELECTED_LOCAL
+    if args.allow_remote_content:
+        return ContentAccess.SELECTED_REMOTE
+    return ContentAccess.METADATA_ONLY
 
 
 def sync_request(args: argparse.Namespace) -> SyncAgentRecords:

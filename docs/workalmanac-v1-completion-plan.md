@@ -85,11 +85,34 @@ Status: complete on `codex/workalmanac`.
 
 ### Slice 147: local curator
 
-- Add an Ollama-compatible curator adapter.
-- Use a strict structured file-change contract instead of shell access.
-- Add runtime readiness and model discovery diagnostics.
-- Preserve the same isolated Vault validation and rollback path as remote
+Status: complete on `codex/workalmanac`.
+
+- [x] Add an Ollama-compatible loopback curator adapter.
+- [x] Use a strict structured file-change contract instead of filesystem or
+  shell tools.
+- [x] Add runtime readiness and model discovery diagnostics.
+- [x] Preserve the same isolated Vault validation and rollback path as remote
   curators.
+- [x] Bound existing-Wiki context, response size, file count, and file size.
+- [x] Reject remote endpoints, remote-content policy, path escapes, and managed
+  page writes.
+
+Local usage:
+
+```powershell
+wa runtimes
+wa distill ses_... --using ollama --model qwen3:8b --allow-local-content
+```
+
+For a non-default local port, place the global option before the command:
+
+```powershell
+wa --ollama-url http://127.0.0.1:11435 runtimes
+```
+
+The adapter uses Ollama's local `/api/tags` and `/api/chat` endpoints with a
+JSON Schema response, non-streaming output, and temperature zero. It never gives
+the model shell or direct filesystem access.
 
 ### Slice 148: local viewer
 
