@@ -143,11 +143,17 @@ LAN interface.
 
 ### Slice 149: onboarding and migration
 
-- Add one guided `wa setup` flow.
-- Add import of existing repository `.almanac` Markdown trees into an isolated
-  review namespace.
-- Add configuration and installation diagnostics.
-- Document Obsidian setup, backup boundaries, privacy controls, and recovery.
+Status: complete on `codex/workalmanac`.
+
+- [x] Add one `wa setup` flow for initialization, first sync, and optional
+  Windows automatic sync.
+- [x] Add import of existing repository `.almanac` Markdown trees into an
+  isolated review namespace.
+- [x] Add local installation diagnostics with optional runtime checks.
+- [x] Document Obsidian setup, backup boundaries, privacy controls, and
+  recovery.
+- [x] Keep imported pages searchable and viewable but outside curator write
+  scope.
 
 ### Slice 150: release verification
 

@@ -16,6 +16,13 @@
 
 A living wiki for your codebase, maintained by AI coding agents.
 
+> **This fork's `codex/workalmanac` branch also contains Work Almanac:** a
+> private, person-owned Wiki for retaining Codex Desktop, Claude, and local
+> agent work across repositories. Start with the
+> [Work Almanac user guide](docs/workalmanac-user-guide.md) and the `wa`
+> command. The original CodeAlmanac surface remains available through
+> `codealmanac`.
+
 CodeAlmanac gives AI agents the context code alone cannot hold: why a system is
 shaped the way it is, what broke before, which invariants matter, and how
 workflows cross files and services. The wiki is plain markdown in your repo,

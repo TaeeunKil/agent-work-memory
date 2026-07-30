@@ -6,11 +6,14 @@ from pathlib import Path
 from workalmanac.app import WorkAlmanac, create_app
 from workalmanac.services.automation.models import AutoSyncSettings
 from workalmanac.services.curators.models import ContentAccess
+from workalmanac.services.diagnostics.models import DiagnosticStatus
 from workalmanac.services.sessions.models import AgentProvider
 from workalmanac.services.synchronization.models import SyncReceipt, SyncStatus
 from workalmanac.settings import load_config
 from workalmanac.workflows.collect import CollectAgentRecords
 from workalmanac.workflows.distill import DistillSessions
+from workalmanac.workflows.import_legacy import ImportLegacyAlmanac
+from workalmanac.workflows.setup import SetupWorkAlmanac
 from workalmanac.workflows.sync import SyncAgentRecords
 
 
@@ -32,6 +35,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     init = commands.add_parser("init", help="Initialize the private Wiki Vault.")
     init.add_argument("path", type=Path)
+
+    setup = commands.add_parser(
+        "setup",
+        help="Initialize, collect, and optionally install automatic sync.",
+    )
+    setup.add_argument("path", type=Path)
+    setup.add_argument("--auto", action="store_true")
+    setup.add_argument("--every", type=int, default=5, metavar="MINUTES")
+    add_collection_options(setup)
 
     note = commands.add_parser("note", help="Save a manual work note.")
     note.add_argument("text")
@@ -90,6 +102,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     import_records.add_argument("path", type=Path)
 
+    migrate = commands.add_parser(
+        "migrate-almanac",
+        help="Copy a legacy repository .almanac/pages tree for review.",
+    )
+    migrate.add_argument("path", type=Path)
+
     distill = commands.add_parser(
         "distill",
         help="Promote selected sessions into durable Wiki knowledge.",
@@ -110,6 +128,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     commands.add_parser("runtimes", help="Check available curator runtimes.")
+
+    doctor = commands.add_parser("doctor", help="Check the local installation.")
+    doctor.add_argument("--home", type=Path, default=Path.home())
+    doctor.add_argument("--runtimes", action="store_true")
 
     serve = commands.add_parser("serve", help="Open the local Work Almanac viewer.")
     serve.add_argument("--port", type=int, default=3928)
@@ -147,11 +169,38 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
         app.wiki.refresh()
         print(f"Initialized Work Almanac Vault at {path}")
         return 0
+    if args.command == "setup":
+        result = app.setup.run(
+            SetupWorkAlmanac(
+                vault_path=args.path,
+                home=args.home.expanduser().resolve(),
+                providers=tuple(
+                    args.providers or (AgentProvider.CODEX, AgentProvider.CLAUDE)
+                ),
+                include_content=args.include_content,
+                auto_interval_minutes=args.every if args.auto else None,
+            )
+        )
+        print(f"Work Almanac ready at {result.vault_path}")
+        print_sync_receipt(result.sync)
+        if result.automation_installed:
+            print(f"Automatic sync installed every {args.every} minute(s).")
+        print("Open the Wiki with `wa serve` or Obsidian.")
+        return 0
     if args.command == "import":
         app.vault.require_path()
         result = app.import_records.import_file(args.path)
         print(f"Imported {result.session_id}; added {result.events_added} event(s).")
         print(result.wiki_path)
+        return 0
+    if args.command == "migrate-almanac":
+        app.vault.require_path()
+        receipt = app.import_legacy.run(ImportLegacyAlmanac(source=args.path))
+        print(
+            f"Imported {receipt.files_copied} legacy page(s); "
+            f"{receipt.files_unchanged} unchanged."
+        )
+        print(receipt.target.as_posix())
         return 0
     if args.command == "distill":
         app.vault.require_path()
@@ -177,6 +226,14 @@ def dispatch(args: argparse.Namespace, app: WorkAlmanac) -> int:
             if readiness.repair:
                 print(f"                     {readiness.repair}")
         return 0
+    if args.command == "doctor":
+        checks = app.diagnostics.run(
+            args.home.expanduser().resolve(),
+            include_runtimes=args.runtimes,
+        )
+        for check in checks:
+            print(f"{check.status.value:<7} {check.name:<20} {check.message}")
+        return int(any(check.status is DiagnosticStatus.ERROR for check in checks))
     if args.command == "serve":
         app.vault.require_path()
         app.wiki.refresh()

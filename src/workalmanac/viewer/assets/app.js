@@ -158,7 +158,7 @@ function renderActivity() {
 }
 
 function categoryGrid() {
-  const categories = ["projects", "decisions", "problems", "procedures", "systems", "unfinished"];
+  const categories = ["projects", "decisions", "problems", "procedures", "systems", "unfinished", "imports"];
   return `<div class="category-grid">${categories.map((category) => {
     const count = state.pages.filter((page) => page.category === category).length;
     return `
@@ -420,6 +420,7 @@ function categoryTitle(value) {
     procedures: "Procedures",
     systems: "Systems",
     unfinished: "Unfinished work",
+    imports: "Imported Almanacs",
     "agent-sessions": "Agent sessions",
     home: "Work Almanac",
   };

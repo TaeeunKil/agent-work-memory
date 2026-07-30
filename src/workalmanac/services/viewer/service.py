@@ -7,7 +7,7 @@ from markdown_it import MarkdownIt
 from workalmanac.services.sessions.models import AgentSession
 from workalmanac.services.sessions.service import SessionsService
 from workalmanac.services.synchronization.service import SynchronizationService
-from workalmanac.services.vault.service import DURABLE_DIRECTORIES, VaultService
+from workalmanac.services.vault.service import CATALOG_DIRECTORIES, VaultService
 from workalmanac.services.viewer.models import (
     ViewerEvent,
     ViewerOverview,
@@ -148,7 +148,7 @@ def safe_viewer_page_path(value: str) -> Path:
         return relative
     if relative.parts[:2] == SESSION_PREFIX and len(relative.parts) == 3:
         return relative
-    if relative.parts and relative.parts[0] in DURABLE_DIRECTORIES:
+    if relative.parts and relative.parts[0] in CATALOG_DIRECTORIES:
         return relative
     raise ValueError("Wiki page is outside the viewer scope")
 

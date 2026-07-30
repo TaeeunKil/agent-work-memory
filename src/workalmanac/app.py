@@ -15,6 +15,7 @@ from workalmanac.services.automation.service import AutomationService
 from workalmanac.services.automation.store import AutomationStore
 from workalmanac.services.curators.ports import CuratorAdapter
 from workalmanac.services.curators.service import CuratorsService
+from workalmanac.services.diagnostics import DiagnosticsService
 from workalmanac.services.distillation.service import DistillationService
 from workalmanac.services.distillation.store import DistillationStore
 from workalmanac.services.search import SearchService
@@ -28,7 +29,9 @@ from workalmanac.services.wiki import WikiCatalogService
 from workalmanac.settings import WorkAlmanacConfig, load_config
 from workalmanac.workflows.collect import CollectAgentRecordsWorkflow
 from workalmanac.workflows.distill import DistillSessionsWorkflow
+from workalmanac.workflows.import_legacy import ImportLegacyAlmanacWorkflow
 from workalmanac.workflows.import_records import ImportAgentRecordsWorkflow
+from workalmanac.workflows.setup import SetupWorkAlmanacWorkflow
 from workalmanac.workflows.sync import SyncAgentRecordsWorkflow
 
 
@@ -41,10 +44,13 @@ class WorkAlmanac:
         vault: VaultService,
         collect: CollectAgentRecordsWorkflow,
         curators: CuratorsService,
+        diagnostics: DiagnosticsService,
         distill: DistillSessionsWorkflow,
         distillation: DistillationService,
         import_records: ImportAgentRecordsWorkflow,
+        import_legacy: ImportLegacyAlmanacWorkflow,
         search: SearchService,
+        setup: SetupWorkAlmanacWorkflow,
         sync: SyncAgentRecordsWorkflow,
         synchronization: SynchronizationService,
         viewer: ViewerService,
@@ -55,10 +61,13 @@ class WorkAlmanac:
         self.vault = vault
         self.collect = collect
         self.curators = curators
+        self.diagnostics = diagnostics
         self.distill = distill
         self.distillation = distillation
         self.import_records = import_records
+        self.import_legacy = import_legacy
         self.search = search
+        self.setup = setup
         self.sync = sync
         self.synchronization = synchronization
         self.viewer = viewer
@@ -90,6 +99,7 @@ def create_app(
     collect = CollectAgentRecordsWorkflow(sessions, vault, wiki, collectors)
     import_records = ImportAgentRecordsWorkflow(sessions, vault, wiki)
     search = SearchService(resolved.database_path, sessions, vault)
+    import_legacy = ImportLegacyAlmanacWorkflow(vault, wiki, search)
     synchronization = SynchronizationService(
         SynchronizationStore(resolved.database_path)
     )
@@ -105,6 +115,7 @@ def create_app(
         AutomationStore(resolved.state_dir / "auto-sync.json"),
         resolved.state_dir,
     )
+    setup = SetupWorkAlmanacWorkflow(vault, wiki, sync, automation)
     adapters = (
         tuple(curator_adapters)
         if curator_adapters is not None
@@ -123,6 +134,7 @@ def create_app(
         )
     )
     curators = CuratorsService(adapters)
+    diagnostics = DiagnosticsService(resolved, vault, automation, curators)
     distillation = DistillationService(DistillationStore(resolved.database_path))
     distill = DistillSessionsWorkflow(
         sessions,
@@ -138,10 +150,13 @@ def create_app(
         vault=vault,
         collect=collect,
         curators=curators,
+        diagnostics=diagnostics,
         distill=distill,
         distillation=distillation,
         import_records=import_records,
+        import_legacy=import_legacy,
         search=search,
+        setup=setup,
         sync=sync,
         synchronization=synchronization,
         viewer=viewer,

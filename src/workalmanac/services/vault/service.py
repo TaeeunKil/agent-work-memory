@@ -18,6 +18,7 @@ VAULT_DIRECTORIES = (
     "procedures",
     "systems",
     "unfinished",
+    "imports/repository-almanacs",
 )
 DURABLE_DIRECTORIES = frozenset(
     {
@@ -29,6 +30,7 @@ DURABLE_DIRECTORIES = frozenset(
         "unfinished",
     }
 )
+CATALOG_DIRECTORIES = DURABLE_DIRECTORIES | {"imports"}
 
 
 class VaultService:
