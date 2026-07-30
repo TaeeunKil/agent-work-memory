@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -9,6 +10,7 @@ from agentworkmemory.app import create_app
 from agentworkmemory.cli import main
 from agentworkmemory.integrations.curators.yoke import (
     YokeCuratorAdapter,
+    apply_windows_curator_output,
     curator_surface,
     run_options,
     standalone_codex_executable,
@@ -397,8 +399,102 @@ def test_windows_yoke_curator_uses_standalone_codex_cli(
     options = run_options(request, surface="codex_cli")
 
     assert harness.surface == "codex_cli"
+    assert "Do not create or edit Vault Markdown directly" in harness.agent.instructions
+    assert ".awm-curator-output.json" in harness.agent.instructions
     assert options.provider is None
     assert harness.plan(options).ok
+
+
+def test_windows_curator_output_is_written_by_parent_process(tmp_path: Path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    written = apply_windows_curator_output(
+        vault,
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "path": "decisions/parent-writer.md",
+                        "content": "# Parent writer\n",
+                    }
+                ]
+            }
+        ),
+    )
+
+    assert written == (Path("decisions/parent-writer.md"),)
+    assert (vault / written[0]).read_text(encoding="utf-8") == "# Parent writer\n"
+
+
+def test_windows_yoke_curator_applies_json_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    adapter = YokeCuratorAdapter("codex", tmp_path / "state/curators/codex")
+
+    class HandoffHarness:
+        def run_sync(self, prompt, options):
+            assert prompt == "Maintain durable Wiki knowledge."
+            assert (vault / ".awm-curator-output.json").is_file()
+            (vault / ".awm-curator-output.json").write_text(
+                json.dumps(
+                    {
+                        "files": [
+                            {
+                                "path": "projects/handoff.md",
+                                "content": "# Handoff\n",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return SimpleNamespace(
+                status="succeeded",
+                output="wrote one page",
+                failure=None,
+                provider_session_id="codex-handoff",
+            )
+
+    monkeypatch.setattr(
+        "agentworkmemory.integrations.curators.yoke.sys",
+        SimpleNamespace(platform="win32"),
+    )
+    monkeypatch.setattr(adapter, "harness", lambda _cwd: HandoffHarness())
+
+    result = adapter.run(
+        CuratorRunRequest(
+            runtime="codex",
+            vault_path=vault,
+            prompt="Maintain durable Wiki knowledge.",
+            content_access=ContentAccess.SELECTED_REMOTE,
+        )
+    )
+
+    assert result.status is CuratorRunStatus.SUCCEEDED
+    assert (vault / "projects/handoff.md").read_text(encoding="utf-8") == "# Handoff\n"
+    assert not (vault / ".awm-curator-output.json").exists()
+
+
+@pytest.mark.parametrize(
+    "path",
+    ("../escape.md", "C:/absolute.md"),
+)
+def test_windows_curator_output_rejects_paths_outside_vault(
+    tmp_path: Path,
+    path: str,
+):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    with pytest.raises(ValueError, match="path"):
+        apply_windows_curator_output(
+            vault,
+            json.dumps({"files": [{"path": path, "content": "# Unsafe\n"}]}),
+        )
 
 
 def test_windows_yoke_curator_prefers_standalone_install(
@@ -474,6 +570,8 @@ def test_yoke_curator_redacts_permission_failures(
     tmp_path: Path,
     monkeypatch,
 ):
+    (tmp_path / "vault").mkdir()
+
     class PermissionDeniedHarness:
         def check_sync(self):
             raise PermissionError(r"C:\private\runtime.exe")

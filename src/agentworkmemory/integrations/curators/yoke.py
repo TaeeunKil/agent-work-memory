@@ -1,7 +1,10 @@
+import json
 import os
 import shutil
 import sys
+from contextlib import suppress
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 from yoke import (
@@ -34,6 +37,21 @@ from agentworkmemory.services.curators.models import (
 
 CLAUDE_WIKI_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep", "LS")
 CURATOR_TIMEOUT_SECONDS = 30 * 60
+WINDOWS_CURATOR_OUTPUT = ".awm-curator-output.json"
+WINDOWS_CODEX_WRITE_INSTRUCTIONS = """
+
+## Windows file handoff
+
+Do not create or edit Vault Markdown directly. On Windows, newly created files
+can remain owned only by the Codex sandbox account. Instead, use `node_repl`
+with Node's `fs/promises.writeFile` to replace the existing
+`.awm-curator-output.json` file with this JSON shape:
+
+{"files":[{"path":"projects/example.md","content":"# Complete Markdown\\n"}]}
+
+Include the complete final UTF-8 content of every page to create or replace.
+Use an empty `files` array for a no-op. Do not write any other file.
+""".rstrip()
 
 
 class YokeCuratorAdapter:
@@ -78,24 +96,47 @@ class YokeCuratorAdapter:
             raise ValueError(
                 f"{self.runtime} is a remote runtime; selected-local is not allowed"
             )
+        output_path = windows_curator_output_path(
+            request.vault_path,
+            runtime=self.runtime,
+            platform=sys.platform,
+        )
         try:
+            if output_path is not None:
+                output_path.write_text('{"files":[]}\n', encoding="utf-8")
             surface = curator_surface(self.runtime, sys.platform)
             run = self.harness(request.vault_path).run_sync(
                 request.prompt,
                 run_options(request, surface=surface),
             )
-        except (OSError, TimeoutError, ValidationError, YokeError) as error:
+            status = CuratorRunStatus(str(run.status))
+            if status is CuratorRunStatus.SUCCEEDED and output_path is not None:
+                apply_windows_curator_output(
+                    request.vault_path,
+                    output_path.read_text(encoding="utf-8"),
+                )
+        except (
+            OSError,
+            TimeoutError,
+            ValidationError,
+            ValueError,
+            YokeError,
+        ) as error:
             return CuratorRunResult(
                 runtime=self.runtime,
                 status=CuratorRunStatus.FAILED,
                 output_text=(f"{self.runtime} curator failed ({type(error).__name__})"),
             )
+        finally:
+            if output_path is not None:
+                with suppress(OSError):
+                    output_path.unlink(missing_ok=True)
         output = run.output or (
             run.failure.message if run.failure is not None else str(run.status)
         )
         return CuratorRunResult(
             runtime=self.runtime,
-            status=CuratorRunStatus(str(run.status)),
+            status=status,
             output_text=output,
             provider_session_id=run.provider_session_id,
         )
@@ -104,11 +145,17 @@ class YokeCuratorAdapter:
         surface = curator_surface(self.runtime, sys.platform)
         if surface == "codex_app_server":
             enable_yoke_codex_utf8()
+        instructions = distill_instructions()
+        if surface == "codex_cli" and sys.platform == "win32":
+            instructions = (
+                f"{instructions.rstrip()}\n\n"
+                f"{WINDOWS_CODEX_WRITE_INSTRUCTIONS}\n"
+            )
         harness = Harness(
             provider=self.runtime,
             surface=surface,
             agent=Agent(
-                instructions=distill_instructions(),
+                instructions=instructions,
                 tools=Tools(
                     read=True,
                     write=True,
@@ -141,6 +188,46 @@ def curator_surface(runtime: str, platform: str) -> str | None:
     if platform == "win32":
         return "codex_cli"
     return "codex_app_server"
+
+
+def windows_curator_output_path(
+    vault_path: Path,
+    *,
+    runtime: str,
+    platform: str,
+) -> Path | None:
+    if runtime != "codex" or platform != "win32":
+        return None
+    return vault_path / WINDOWS_CURATOR_OUTPUT
+
+
+def apply_windows_curator_output(vault_path: Path, raw: str) -> tuple[Path, ...]:
+    payload: Any = json.loads(raw)
+    if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
+        raise ValueError("Windows curator output must contain a files list")
+    root = vault_path.resolve()
+    written: list[Path] = []
+    seen: set[Path] = set()
+    for proposal in payload["files"]:
+        if not isinstance(proposal, dict):
+            raise ValueError("Windows curator file proposal must be an object")
+        relative_text = proposal.get("path")
+        content = proposal.get("content")
+        if not isinstance(relative_text, str) or not isinstance(content, str):
+            raise ValueError("Windows curator file proposal needs path and content")
+        relative = Path(relative_text)
+        if relative.is_absolute() or relative in seen:
+            raise ValueError("Windows curator file path is invalid or duplicated")
+        target = (root / relative).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError as error:
+            raise ValueError("Windows curator file path escapes the Vault") from error
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        seen.add(relative)
+        written.append(relative)
+    return tuple(written)
 
 
 def standalone_codex_executable() -> str:
