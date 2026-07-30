@@ -37,6 +37,7 @@ from agentworkmemory.services.distillation.models import (
 from agentworkmemory.services.distillation.outcomes import (
     classify_session_outcomes,
 )
+from agentworkmemory.services.sessions.models import CollectorCursor
 from agentworkmemory.services.wiki.models import WikiPage
 from agentworkmemory.settings import AgentWorkMemoryConfig
 from agentworkmemory.workflows.distill import DistillSessions
@@ -370,6 +371,47 @@ def test_distill_cli_pending_empty_queue_is_a_noop(
     assert exit_code == 0
     assert adapter.requests == []
     assert "No captured sessions" in capsys.readouterr().out
+
+
+def test_pending_distillation_excludes_captured_session_without_events(
+    tmp_path: Path,
+):
+    app = create_app(
+        AgentWorkMemoryConfig(
+            state_dir=tmp_path / "state",
+            vault_path=None,
+        )
+    )
+    app.vault.initialize(tmp_path / "vault")
+    now = datetime.now(UTC)
+    empty = app.sessions.remember_discovered(
+        provider="cursor",
+        provider_session_id="empty-cursor-session",
+        cwd=tmp_path / "workspace",
+        source_path=tmp_path / "cursor-empty.json",
+        modified_at=now,
+    )
+    app.sessions.append_events(
+        empty.session_id,
+        (),
+        CollectorCursor(
+            source_id="cursor:empty",
+            provider="cursor",
+            source_path=tmp_path / "cursor-empty.json",
+            last_line=0,
+            size_bytes=0,
+            updated_at=now,
+        ),
+    )
+    retained = app.sessions.add_manual_note(
+        "Keep this durable decision.",
+        cwd=tmp_path / "workspace",
+    )
+
+    candidates = app.sessions.distillation_candidates()
+
+    assert retained in candidates
+    assert empty not in candidates
 
 
 @pytest.mark.parametrize(
