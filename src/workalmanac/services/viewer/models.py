@@ -2,6 +2,7 @@ from datetime import datetime
 from pathlib import Path
 
 from workalmanac.core import WorkAlmanacModel
+from workalmanac.services.activity.models import ActivityTask
 from workalmanac.services.sessions.models import AgentEventKind, SessionState
 
 
@@ -11,6 +12,12 @@ class ViewerOverview(WorkAlmanacModel):
     pending_distill_count: int
     last_sync_status: str | None
     last_sync_at: datetime | None
+
+
+class ViewerSchedule(WorkAlmanacModel):
+    task: ActivityTask
+    task_name: str
+    next_run_at: datetime
 
 
 class ViewerSession(WorkAlmanacModel):

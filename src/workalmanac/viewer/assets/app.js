@@ -5,6 +5,7 @@ const state = {
   pages: [],
   receipts: { sync: [], distill: [] },
   activity: [],
+  schedules: [],
   selectedActivityId: null,
 };
 
@@ -26,8 +27,10 @@ boot();
 
 async function boot() {
   window.setInterval(refreshActivity, 2000);
+  window.setInterval(refreshSchedules, 30000);
   try {
     await refreshActivity();
+    await refreshSchedules();
     await refreshData();
     render();
     openHashTarget();
@@ -38,6 +41,15 @@ async function boot() {
     });
     renderActivity();
     showToast(`Vault data is busy. Activity remains live.`);
+  }
+}
+
+async function refreshSchedules() {
+  try {
+    state.schedules = await api("/api/schedules");
+    if (state.view === "activity") renderActivity();
+  } catch {
+    // Keep the last scheduler snapshot; OS status reads are intentionally slower.
   }
 }
 
@@ -179,6 +191,7 @@ function renderActivity() {
     ...state.receipts.distill.map((receipt) => ({ ...receipt, type: "distill" })),
   ].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
   const active = state.activity.filter((run) => run.status === "running").length;
+  const nextSchedule = state.schedules[0] || null;
   workspace.innerHTML = `
     <header class="view-header">
       <div>
@@ -192,9 +205,9 @@ function renderActivity() {
         <strong>${active}</strong>
         <span>running now</span>
       </div>
-      <div>
-        <p class="eyebrow">Scheduler</p>
-        <p>${active ? "Work is moving in the background." : "No scheduled operation is running."}</p>
+      <div class="activity-next">
+        <p class="eyebrow">Next run</p>
+        <p>${nextSchedule ? `${escapeHtml(activityTaskLabel(nextSchedule.task))} · <strong>${escapeHtml(formatScheduleMoment(nextSchedule.next_run_at))}</strong>` : "No installed schedule"}</p>
       </div>
     </section>
     <section class="section-block">
@@ -583,6 +596,15 @@ function formatMoment(value) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+  }).format(new Date(value));
+}
+
+function formatScheduleMoment(value) {
+  if (!value) return "Not scheduled";
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(new Date(value));
 }
 

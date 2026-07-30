@@ -51,3 +51,4 @@ class AutoDistillStatus(WorkAlmanacModel):
     task_name: str
     message: str
     settings: AutoDistillSettings | None = None
+    next_run_at: datetime | None = None

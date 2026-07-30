@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 from workalmanac.services.automation.models import AutoSyncSettings
@@ -14,6 +15,9 @@ class UnsupportedSchedulerAdapter:
 
     def installed(self) -> bool:
         return False
+
+    def next_run_at(self) -> datetime | None:
+        return None
 
     def remove(self) -> None:
         return None
