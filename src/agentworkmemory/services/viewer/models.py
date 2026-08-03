@@ -66,6 +66,9 @@ class ViewerPageDetail(AgentWorkMemoryModel):
 class ViewerGraphNode(AgentWorkMemoryModel):
     id: str
     title: str
+    label: str
+    short_title_ko: str | None
+    short_title_en: str | None
     category: str
     tags: tuple[str, ...]
     source_count: int

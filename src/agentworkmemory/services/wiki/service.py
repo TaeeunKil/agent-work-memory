@@ -4,6 +4,7 @@ from pathlib import Path
 
 import yaml
 
+from agentworkmemory.services.frontmatter import split_frontmatter
 from agentworkmemory.services.sessions.models import AgentSession
 from agentworkmemory.services.sessions.service import SessionsService
 from agentworkmemory.services.vault.service import CATALOG_DIRECTORIES, VaultService
@@ -91,25 +92,12 @@ def read_wiki_page(root: Path, path: Path, category: str) -> WikiPage:
         path=path.relative_to(root),
         title=title,
         category=category,
+        short_title_ko=optional_string(metadata.get("short_title_ko")),
+        short_title_en=optional_string(metadata.get("short_title_en")),
         tags=tags,
         source_session_ids=tuple(dict.fromkeys(source_session_ids)),
         outgoing_links=outgoing,
     )
-
-
-def split_frontmatter(raw: str) -> tuple[dict[str, object], str]:
-    if not raw.startswith("---\n"):
-        return {}, raw
-    closing = raw.find("\n---\n", 4)
-    if closing < 0:
-        return {}, raw
-    loaded = yaml.safe_load(raw[4:closing])
-    metadata = (
-        {str(key): value for key, value in loaded.items()}
-        if isinstance(loaded, dict)
-        else {}
-    )
-    return metadata, raw[closing + 5 :]
 
 
 def markdown_title(path: Path, body: str) -> str:
@@ -127,6 +115,13 @@ def string_tuple(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
     return tuple(item for item in value if isinstance(item, str))
+
+
+def optional_string(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def normalize_wikilink(value: str) -> Path:

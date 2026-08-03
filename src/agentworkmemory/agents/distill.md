@@ -35,6 +35,19 @@ sources:
     session_id: ses_...
 ```
 
+Every changed durable page also needs both graph labels in its YAML
+frontmatter:
+
+```yaml
+short_title_ko: 간결한 한국어 제목
+short_title_en: Concise English title
+```
+
+Make these semantic labels rather than mechanically truncated H1 text. Keep
+Korean labels to about 24 characters and English labels to about six words,
+preserve product names and acronyms, use one line without a trailing period,
+and update both labels when the page topic or H1 materially changes.
+
 Cite the source near non-obvious claims with `[@session-short-name]`. A session
 records what happened or was said; it does not prove every claim inside it.
 Preserve uncertainty and distinguish observed results from proposed ideas.

@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 from agentworkmemory.integrations.processes import hidden_process_creation_flags
+from agentworkmemory.services.frontmatter import FRONTMATTER, split_frontmatter
 from agentworkmemory.services.sessions.models import AgentEvent, AgentSession
 from agentworkmemory.services.vault.snapshot import VaultSnapshot, read_vault_bytes
 from agentworkmemory.settings import AgentWorkMemoryConfig, save_config
@@ -319,14 +320,19 @@ def allowed_distill_path(relative: Path) -> bool:
 def validate_markdown_page(path: Path) -> None:
     raw = read_vault_bytes(path).decode("utf-8")
     body = raw
-    if raw.startswith("---\n"):
-        closing = raw.find("\n---\n", 4)
-        if closing < 0:
+    metadata: dict[object, object] = {}
+    if raw.startswith(("---\n", "---\r\n")):
+        match = FRONTMATTER.match(raw)
+        if match is None:
             raise ValueError(f"unterminated frontmatter: {path.name}")
-        metadata = yaml.safe_load(raw[4:closing])
-        if metadata is not None and not isinstance(metadata, dict):
+        loaded = yaml.safe_load(match.group("yaml"))
+        if loaded is not None and not isinstance(loaded, dict):
             raise ValueError(f"frontmatter must be a mapping: {path.name}")
-        body = raw[closing + 5 :]
+        metadata, body = split_frontmatter(raw)
+    for key in ("short_title_ko", "short_title_en"):
+        value = metadata.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Wiki page needs {key}: {path.name}")
     if not any(line.startswith("# ") for line in body.splitlines()):
         raise ValueError(f"Wiki page needs an H1 title: {path.name}")
 

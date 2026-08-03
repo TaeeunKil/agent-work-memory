@@ -88,6 +88,14 @@ def test_curator_instructions_omit_secret_values_from_durable_wiki():
     assert "omit the value" in instructions
 
 
+def test_curator_instructions_require_bilingual_graph_titles():
+    instructions = " ".join(distill_instructions().split())
+
+    assert "short_title_ko" in instructions
+    assert "short_title_en" in instructions
+    assert "semantic labels" in instructions
+
+
 def test_distill_promotes_session_into_durable_wiki(tmp_path: Path):
     adapter = FakeCuratorAdapter(mutate=write_decision)
     app = distill_app(tmp_path, adapter)
@@ -926,6 +934,8 @@ def write_decision(request: CuratorRunRequest) -> None:
     path.write_text(
         """---
 title: Central Writer
+short_title_ko: 중앙 작성기
+short_title_en: Central writer
 sources:
   - id: selected-session
     type: conversation

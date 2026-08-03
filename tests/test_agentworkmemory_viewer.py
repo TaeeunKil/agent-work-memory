@@ -30,7 +30,14 @@ class ViewerCurator:
 
     def run(self, request: CuratorRunRequest) -> CuratorRunResult:
         (request.vault_path / "decisions" / "viewer-action.md").write_text(
-            "# Viewer action\n\nThe viewer can trigger selected distillation.\n",
+            """---
+short_title_ko: 뷰어 동작
+short_title_en: Viewer action
+---
+# Viewer action
+
+The viewer can trigger selected distillation.
+""",
             encoding="utf-8",
         )
         return CuratorRunResult(
@@ -155,6 +162,8 @@ def test_viewer_exposes_resolved_durable_wiki_graph(tmp_path: Path):
 """
     (vault / "projects" / "memory-map.md").write_text(
         f"""---
+short_title_ko: 메모리 맵
+short_title_en: Memory map
 {source}---
 # Memory map
 
@@ -164,7 +173,18 @@ Uses [[durable-links]], [[decisions/durable-links]], and
         encoding="utf-8",
     )
     (vault / "decisions" / "durable-links.md").write_text(
-        "# Durable links\n\nBack to [[projects/memory-map]].\n",
+        """---
+short_title_ko: 영속 링크
+short_title_en: Durable links
+---
+# 영속 링크 문서
+
+Back to [[projects/memory-map]].
+""",
+        encoding="utf-8",
+    )
+    (vault / "systems" / "legacy-page.md").write_text(
+        "# Legacy page\n",
         encoding="utf-8",
     )
     app.wiki.refresh()
@@ -178,12 +198,21 @@ Uses [[durable-links]], [[decisions/durable-links]], and
     assert nodes["projects/memory-map.md"] == {
         "id": "projects/memory-map.md",
         "title": "Memory map",
+        "label": "Memory map",
+        "short_title_ko": "메모리 맵",
+        "short_title_en": "Memory map",
         "category": "projects",
         "tags": [],
         "source_count": 1,
         "incoming_count": 1,
         "outgoing_count": 1,
     }
+    assert nodes["decisions/durable-links.md"]["title"] == "영속 링크 문서"
+    assert nodes["decisions/durable-links.md"]["label"] == "영속 링크"
+    legacy = nodes["systems/legacy-page.md"]
+    assert legacy["label"] == legacy["title"]
+    assert legacy["short_title_ko"] is None
+    assert legacy["short_title_en"] is None
     assert payload["edges"] == [
         {
             "source": "decisions/durable-links.md",

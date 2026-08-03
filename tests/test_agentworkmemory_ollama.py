@@ -45,6 +45,8 @@ def test_local_distill_uses_structured_output_and_existing_wiki(tmp_path: Path):
                     path="decisions/local-curator.md",
                     content=(
                         "---\n"
+                        "short_title_ko: 로컬 큐레이터\n"
+                        "short_title_en: Local curator\n"
                         "tags:\n"
                         "  - local-llm\n"
                         "---\n"

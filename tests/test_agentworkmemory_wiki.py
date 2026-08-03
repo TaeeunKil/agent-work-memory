@@ -48,6 +48,8 @@ def test_catalog_generates_sources_backlinks_and_stable_indexes(tmp_path: Path):
     app.vault.refresh_session(session, app.sessions.events(session.session_id))
     (vault / "decisions" / "central-writer.md").write_text(
         f"""---
+short_title_ko: 중앙 작성기
+short_title_en: Central writer
 tags:
   - architecture
 sources:
@@ -88,6 +90,25 @@ The project follows [[decisions/central-writer|Central writer]].
     assert len(app.wiki.pages()) == 2
 
 
+def test_catalog_reads_bilingual_titles_from_crlf_frontmatter(tmp_path: Path):
+    app = wiki_app(tmp_path)
+    vault = app.vault.initialize(tmp_path / "vault")
+    (vault / "systems" / "windows-page.md").write_bytes(
+        (
+            "---\r\n"
+            "short_title_ko: 윈도우 페이지\r\n"
+            "short_title_en: Windows page\r\n"
+            "---\r\n"
+            "# Windows page\r\n"
+        ).encode()
+    )
+
+    page = app.wiki.pages()[0]
+
+    assert page.short_title_ko == "윈도우 페이지"
+    assert page.short_title_en == "Windows page"
+
+
 def test_managed_indexes_are_not_curator_writable(tmp_path: Path):
     app = wiki_app(tmp_path)
     app.vault.initialize(tmp_path / "vault")
@@ -99,6 +120,20 @@ def test_managed_indexes_are_not_curator_writable(tmp_path: Path):
             encoding="utf-8",
         )
         with pytest.raises(ValueError, match="forbidden Vault path"):
+            app.vault.validate_distill_changes(snapshot)
+
+
+def test_curator_changes_require_bilingual_graph_titles(tmp_path: Path):
+    app = wiki_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+
+    with app.vault.curator_workspace() as (workspace, snapshot, _):
+        (workspace / "decisions" / "missing-graph-titles.md").write_text(
+            "# Missing graph titles\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="short_title_ko"):
             app.vault.validate_distill_changes(snapshot)
 
 
@@ -285,6 +320,8 @@ def test_distill_prompt_supplies_navigable_session_link(tmp_path: Path):
     assert "Merge new evidence into an existing page" in prompt
     assert "Maintain one projects/<project-slug>.md hub" in prompt
     assert "Preserve existing sources and append each supporting session once" in prompt
+    assert "both short_title_ko and" in prompt
+    assert "short_title_en in YAML frontmatter" in prompt
     assert f"- Workspace: {session.cwd or 'unknown'}" in prompt
     assert "Never edit README.md, Home.md, _index.md" in prompt
 

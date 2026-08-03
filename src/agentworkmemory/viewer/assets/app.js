@@ -549,7 +549,7 @@ function mountKnowledgeGraph() {
           "border-width": 1,
           "border-color": "#fff9ef",
           "border-opacity": 0.34,
-          label: "data(title)",
+          label: "data(label)",
           color: "#f6f0e6",
           "font-family": "Segoe UI Variable, Aptos, sans-serif",
           "font-size": 9,
@@ -692,7 +692,14 @@ function applyGraphFilters() {
 }
 
 function graphNodeMatches(node, query) {
-  const searchable = [node.data("title"), node.id(), ...node.data("tags")]
+  const searchable = [
+    node.data("title"),
+    node.data("short_title_ko"),
+    node.data("short_title_en"),
+    node.id(),
+    ...node.data("tags"),
+  ]
+    .filter(Boolean)
     .join(" ")
     .toLocaleLowerCase();
   return searchable.includes(query);

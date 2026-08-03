@@ -8,6 +8,7 @@ from markdown_it import MarkdownIt
 from agentworkmemory.services.activity.models import ActivityTask
 from agentworkmemory.services.auto_distillation.service import AutoDistillationService
 from agentworkmemory.services.automation.service import AutomationService
+from agentworkmemory.services.frontmatter import split_frontmatter
 from agentworkmemory.services.sessions.models import AgentSession
 from agentworkmemory.services.sessions.service import SessionsService
 from agentworkmemory.services.synchronization.service import SynchronizationService
@@ -31,7 +32,6 @@ from agentworkmemory.services.wiki.service import (
     WIKILINK,
     WikiCatalogService,
     resolved_wiki_links,
-    split_frontmatter,
     wiki_backlinks,
 )
 
@@ -137,6 +137,9 @@ class ViewerService:
             ViewerGraphNode(
                 id=page.path.as_posix(),
                 title=page.title,
+                label=graph_label(page),
+                short_title_ko=page.short_title_ko,
+                short_title_en=page.short_title_en,
                 category=page.category,
                 tags=page.tags,
                 source_count=len(page.source_session_ids),
@@ -294,6 +297,15 @@ def viewer_page(page: WikiPage, backlink_count: int) -> ViewerPage:
         source_session_ids=page.source_session_ids,
         backlink_count=backlink_count,
     )
+
+
+def graph_label(page: WikiPage) -> str:
+    localized = (
+        (page.short_title_ko, page.short_title_en)
+        if re.search(r"[가-힣]", page.title)
+        else (page.short_title_en, page.short_title_ko)
+    )
+    return next((title for title in localized if title), page.title)
 
 
 def markdown_title(path: Path, body: str) -> str:
