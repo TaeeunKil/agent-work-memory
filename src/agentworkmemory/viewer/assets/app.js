@@ -4,11 +4,30 @@ const state = {
   sessions: [],
   pages: [],
   projects: [],
+  graph: null,
+  graphLoading: false,
+  graphCategory: "all",
+  graphQuery: "",
+  graphSelectedId: null,
   receipts: { sync: [], distill: [] },
   activity: [],
   schedules: [],
   selectedActivityId: null,
 };
+
+const GRAPH_POSITION_KEY = "awm.knowledge-graph.positions.v1";
+const GRAPH_COLORS = {
+  projects: "#e25832",
+  decisions: "#d9a441",
+  problems: "#bd7780",
+  procedures: "#80a078",
+  systems: "#69a0b4",
+  unfinished: "#9b86ad",
+  imports: "#879096",
+};
+
+let knowledgeGraph = null;
+let graphResizeTimer = null;
 
 const workspace = document.querySelector("#workspace");
 const activityInspector = document.querySelector("#inspector");
@@ -26,6 +45,7 @@ document.querySelector("#search-form").addEventListener("submit", search);
 syncButton.addEventListener("click", syncTranscripts);
 buildWikiButton.addEventListener("click", openBuildWiki);
 window.addEventListener("hashchange", openHashTarget);
+window.addEventListener("resize", queueGraphResize);
 
 boot();
 
@@ -69,6 +89,7 @@ async function refreshData() {
   state.sessions = sessions;
   state.pages = pages;
   state.projects = projects;
+  state.graph = null;
   state.receipts = receipts;
   updateRailStatus();
 }
@@ -103,6 +124,7 @@ function updateRailStatus() {
 }
 
 function setView(view) {
+  if (state.view === "graph" && view !== "graph") destroyKnowledgeGraph();
   state.view = view;
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.view === view);
@@ -112,9 +134,13 @@ function setView(view) {
 }
 
 function render() {
+  const graphView = state.view === "graph";
+  workspace.classList.toggle("graph-workspace", graphView);
+  if (!graphView) destroyKnowledgeGraph();
   if (state.view === "projects") renderProjects();
   else if (state.view === "sessions") renderSessions();
   else if (state.view === "knowledge") renderKnowledge();
+  else if (state.view === "graph") renderGraph();
   else if (state.view === "activity") renderActivity();
   else renderOverview();
 }
@@ -207,6 +233,464 @@ function renderKnowledge(category = null) {
     </section>
   `;
   bindRows();
+}
+
+function renderGraph() {
+  destroyKnowledgeGraph();
+  if (!state.graph) {
+    workspace.innerHTML = `
+      <section class="graph-shell graph-shell-loading">
+        <div class="graph-loading-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <p>Mapping durable knowledge&hellip;</p>
+      </section>`;
+    loadGraph();
+    return;
+  }
+
+  const categories = [...new Set(state.graph.nodes.map((node) => node.category))]
+    .sort((a, b) => categoryTitle(a).localeCompare(categoryTitle(b)));
+  const isolated = state.graph.nodes.filter(
+    (node) => node.incoming_count + node.outgoing_count === 0,
+  ).length;
+  workspace.innerHTML = `
+    <section class="graph-shell">
+      <header class="graph-toolbar">
+        <div class="graph-title">
+          <p class="eyebrow">Durable knowledge</p>
+          <div>
+            <h1>Graph</h1>
+            <p id="graph-summary">${state.graph.nodes.length} notes &middot; ${state.graph.edges.length} links &middot; ${isolated} isolated</p>
+          </div>
+        </div>
+        <div class="graph-controls">
+          <label class="graph-search">
+            <span class="sr-only">Find a knowledge node</span>
+            <input id="graph-search" type="search" value="${escapeHtml(state.graphQuery)}" placeholder="Find a node" autocomplete="off">
+          </label>
+          <label class="graph-category-control">
+            <span class="sr-only">Filter by knowledge area</span>
+            <select id="graph-category">
+              <option value="all">All knowledge</option>
+              ${categories.map((category) => `
+                <option value="${escapeHtml(category)}" ${state.graphCategory === category ? "selected" : ""}>
+                  ${escapeHtml(categoryTitle(category))}
+                </option>`).join("")}
+            </select>
+          </label>
+          <button id="graph-fit" class="graph-tool" type="button">Fit</button>
+          <button id="graph-relayout" class="graph-tool" type="button">Re-layout</button>
+        </div>
+      </header>
+      <div class="graph-stage">
+        <div
+          id="knowledge-graph"
+          role="application"
+          tabindex="0"
+          aria-label="Interactive graph of durable Wiki pages and their links"
+          aria-describedby="graph-instructions"
+        ></div>
+        <p id="graph-instructions" class="sr-only">Drag to pan, use the mouse wheel to zoom, and select a node to open its Wiki page.</p>
+        <div class="graph-legend" aria-label="Knowledge areas">
+          ${categories.map((category) => `
+            <span><i style="--legend-color: ${categoryColor(category)}"></i>${escapeHtml(categoryTitle(category))}</span>
+          `).join("")}
+        </div>
+        <div id="graph-readout" class="graph-readout" aria-live="polite">
+          <span>Hover a node to trace its immediate context</span>
+        </div>
+      </div>
+    </section>`;
+
+  document.querySelector("#graph-search").addEventListener("input", (event) => {
+    state.graphQuery = event.target.value.trim();
+    applyGraphFilters();
+  });
+  document.querySelector("#graph-search").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    focusGraphMatches();
+  });
+  document.querySelector("#graph-category").addEventListener("change", (event) => {
+    state.graphCategory = event.target.value;
+    applyGraphFilters();
+    fitVisibleGraph();
+  });
+  document.querySelector("#graph-fit").addEventListener("click", fitVisibleGraph);
+  document.querySelector("#graph-relayout").addEventListener("click", () => {
+    clearStoredGraphPositions();
+    runGraphLayout();
+  });
+
+  window.requestAnimationFrame(mountKnowledgeGraph);
+}
+
+async function loadGraph() {
+  if (state.graphLoading) return;
+  state.graphLoading = true;
+  try {
+    state.graph = await api("/api/graph");
+    if (state.view === "graph") renderGraph();
+  } catch (error) {
+    if (state.view === "graph") {
+      workspace.innerHTML = `
+        <section class="graph-shell graph-shell-loading">
+          <p>${escapeHtml(error.message)}</p>
+        </section>`;
+    }
+  } finally {
+    state.graphLoading = false;
+  }
+}
+
+function mountKnowledgeGraph() {
+  const container = document.querySelector("#knowledge-graph");
+  if (!container || !state.graph || typeof window.cytoscape !== "function") {
+    if (container) container.innerHTML = `<p class="graph-fallback">Graph renderer unavailable.</p>`;
+    return;
+  }
+  if (state.graph.nodes.length === 0) {
+    container.innerHTML = `<p class="graph-fallback">Build the Wiki to create the first knowledge node.</p>`;
+    return;
+  }
+
+  const positions = storedGraphPositions();
+  const hasCompleteLayout = state.graph.nodes.every((node) => positions[node.id]);
+  const maxDegree = Math.max(
+    1,
+    ...state.graph.nodes.map((node) => node.incoming_count + node.outgoing_count),
+  );
+  const elements = [
+    ...state.graph.nodes.map((node) => ({
+      data: {
+        ...node,
+        degree: node.incoming_count + node.outgoing_count,
+        color: categoryColor(node.category),
+      },
+      position: positions[node.id],
+    })),
+    ...state.graph.edges.map((edge) => ({ data: edge })),
+  ];
+
+  knowledgeGraph = window.cytoscape({
+    container,
+    elements,
+    layout: { name: "preset", fit: false },
+    minZoom: 0.12,
+    maxZoom: 3.2,
+    selectionType: "single",
+    boxSelectionEnabled: false,
+    style: [
+      {
+        selector: "node",
+        style: {
+          width: `mapData(degree, 0, ${maxDegree}, 9, 29)`,
+          height: `mapData(degree, 0, ${maxDegree}, 9, 29)`,
+          "background-color": "data(color)",
+          "background-opacity": 0.94,
+          "border-width": 1,
+          "border-color": "#fff9ef",
+          "border-opacity": 0.34,
+          label: "data(title)",
+          color: "#f6f0e6",
+          "font-family": "Segoe UI Variable, Aptos, sans-serif",
+          "font-size": 9,
+          "font-weight": 500,
+          "min-zoomed-font-size": 10,
+          "text-margin-y": -10,
+          "text-outline-color": "#121a22",
+          "text-outline-width": 3,
+          "text-outline-opacity": 0.86,
+          "text-wrap": "ellipsis",
+          "text-max-width": 150,
+          "transition-property": "opacity, border-width, border-opacity",
+          "transition-duration": "140ms",
+        },
+      },
+      {
+        selector: "edge",
+        style: {
+          width: 1,
+          "curve-style": "haystack",
+          "line-color": "#8b98a1",
+          opacity: 0.24,
+          "transition-property": "opacity, line-color, width",
+          "transition-duration": "140ms",
+        },
+      },
+      {
+        selector: "node:selected",
+        style: {
+          "border-color": "#fffdf8",
+          "border-opacity": 1,
+          "border-width": 3,
+          "overlay-color": "#e25832",
+          "overlay-opacity": 0.12,
+          "overlay-padding": 8,
+          "z-index": 20,
+        },
+      },
+      {
+        selector: ".graph-filtered",
+        style: { display: "none" },
+      },
+      {
+        selector: ".graph-search-muted, .graph-context-muted",
+        style: { opacity: 0.075 },
+      },
+      {
+        selector: "node.graph-match, node.graph-neighbor",
+        style: {
+          opacity: 1,
+          "border-opacity": 0.9,
+          "border-width": 2,
+          "min-zoomed-font-size": 0,
+          "z-index": 12,
+        },
+      },
+      {
+        selector: "edge.graph-active-edge",
+        style: {
+          opacity: 0.82,
+          "line-color": "#e9c9b4",
+          width: 1.7,
+          "z-index": 10,
+        },
+      },
+    ],
+  });
+
+  bindGraphInteractions();
+  applyGraphFilters();
+  if (hasCompleteLayout) {
+    fitVisibleGraph(false);
+  } else {
+    runGraphLayout();
+  }
+}
+
+function bindGraphInteractions() {
+  knowledgeGraph.on("mouseover", "node", (event) => {
+    focusGraphNeighborhood(event.target);
+    updateGraphReadout(event.target);
+  });
+  knowledgeGraph.on("mouseout", "node", () => {
+    clearGraphNeighborhood();
+    const selected = knowledgeGraph.getElementById(state.graphSelectedId || "");
+    if (selected.length) focusGraphNeighborhood(selected);
+    else updateGraphReadout(null);
+  });
+  knowledgeGraph.on("tap", "node", (event) => {
+    const node = event.target;
+    state.graphSelectedId = node.id();
+    knowledgeGraph.nodes().unselect();
+    node.select();
+    focusGraphNeighborhood(node);
+    knowledgeGraph.animate(
+      {
+        center: { eles: node },
+        zoom: Math.max(knowledgeGraph.zoom(), 1.05),
+      },
+      { duration: reducedMotion() ? 0 : 280 },
+    );
+    openPage(node.id()).then(queueGraphResize).catch((error) => showToast(error.message));
+  });
+  knowledgeGraph.on("tap", (event) => {
+    if (event.target !== knowledgeGraph) return;
+    state.graphSelectedId = null;
+    knowledgeGraph.nodes().unselect();
+    clearGraphNeighborhood();
+    updateGraphReadout(null);
+  });
+  knowledgeGraph.on("dragfree", "node", saveGraphPositions);
+}
+
+function applyGraphFilters() {
+  if (!knowledgeGraph) return;
+  const category = state.graphCategory;
+  const query = state.graphQuery.toLocaleLowerCase();
+  knowledgeGraph.batch(() => {
+    knowledgeGraph.elements().removeClass(
+      "graph-filtered graph-search-muted graph-match graph-active-edge",
+    );
+    const hiddenNodes = knowledgeGraph.nodes().filter(
+      (node) => category !== "all" && node.data("category") !== category,
+    );
+    hiddenNodes.addClass("graph-filtered");
+    knowledgeGraph.edges().filter((edge) => (
+      edge.source().hasClass("graph-filtered") || edge.target().hasClass("graph-filtered")
+    )).addClass("graph-filtered");
+
+    const visibleNodes = knowledgeGraph.nodes().not(".graph-filtered");
+    if (query) {
+      const matches = visibleNodes.filter((node) => graphNodeMatches(node, query));
+      visibleNodes.not(matches).addClass("graph-search-muted");
+      matches.addClass("graph-match");
+      knowledgeGraph.edges().not(".graph-filtered").addClass("graph-search-muted");
+      matches.connectedEdges().not(".graph-filtered").removeClass("graph-search-muted");
+    }
+  });
+  updateGraphSummary();
+}
+
+function graphNodeMatches(node, query) {
+  const searchable = [node.data("title"), node.id(), ...node.data("tags")]
+    .join(" ")
+    .toLocaleLowerCase();
+  return searchable.includes(query);
+}
+
+function focusGraphMatches() {
+  if (!knowledgeGraph || !state.graphQuery) return;
+  const matches = knowledgeGraph.nodes(".graph-match").not(".graph-filtered");
+  if (!matches.length) return;
+  knowledgeGraph.animate(
+    { fit: { eles: matches, padding: 110 } },
+    { duration: reducedMotion() ? 0 : 280 },
+  );
+}
+
+function focusGraphNeighborhood(node) {
+  if (!knowledgeGraph || node.hasClass("graph-filtered")) return;
+  clearGraphNeighborhood();
+  const visible = knowledgeGraph.elements().not(".graph-filtered");
+  const neighborhood = node.closedNeighborhood().not(".graph-filtered");
+  visible.not(neighborhood).addClass("graph-context-muted");
+  neighborhood.nodes().addClass("graph-neighbor");
+  neighborhood.edges().addClass("graph-active-edge");
+}
+
+function clearGraphNeighborhood() {
+  if (!knowledgeGraph) return;
+  knowledgeGraph.elements().removeClass(
+    "graph-context-muted graph-neighbor graph-active-edge",
+  );
+}
+
+function updateGraphReadout(node) {
+  const readout = document.querySelector("#graph-readout");
+  if (!readout) return;
+  if (!node) {
+    readout.innerHTML = `<span>Hover a node to trace its immediate context</span>`;
+    return;
+  }
+  const degree = node.data("incoming_count") + node.data("outgoing_count");
+  readout.innerHTML = `
+    <strong>${escapeHtml(node.data("title"))}</strong>
+    <span>${escapeHtml(categoryTitle(node.data("category")))} &middot; ${degree} connection${degree === 1 ? "" : "s"}</span>`;
+}
+
+function updateGraphSummary() {
+  if (!knowledgeGraph) return;
+  const summary = document.querySelector("#graph-summary");
+  if (!summary) return;
+  const visibleNodes = knowledgeGraph.nodes().not(".graph-filtered");
+  const visibleEdges = knowledgeGraph.edges().not(".graph-filtered");
+  const matches = knowledgeGraph.nodes(".graph-match").not(".graph-filtered");
+  const suffix = state.graphQuery ? ` &middot; ${matches.length} matches` : "";
+  summary.innerHTML = `${visibleNodes.length} notes &middot; ${visibleEdges.length} links${suffix}`;
+}
+
+function fitVisibleGraph(animate = true) {
+  if (!knowledgeGraph) return;
+  const visible = knowledgeGraph.elements().not(".graph-filtered");
+  if (!visible.length) return;
+  const container = knowledgeGraph.container();
+  const components = visible.components();
+  const target = container.clientWidth < 520 && components.length > 1
+    ? components.reduce((largest, component) => (
+        component.nodes().length > largest.nodes().length ? component : largest
+      ))
+    : visible;
+  if (!animate || reducedMotion()) {
+    knowledgeGraph.fit(target, 64);
+    return;
+  }
+  knowledgeGraph.animate({ fit: { eles: target, padding: 64 } }, { duration: 260 });
+}
+
+function runGraphLayout() {
+  if (!knowledgeGraph) return;
+  const layout = knowledgeGraph.layout({
+    name: "cose",
+    animate: reducedMotion() || knowledgeGraph.nodes().length > 450 ? false : "end",
+    animationDuration: 620,
+    randomize: true,
+    componentSpacing: 96,
+    nodeRepulsion: 8600,
+    idealEdgeLength: 94,
+    edgeElasticity: 110,
+    nestingFactor: 1.1,
+    gravity: 0.28,
+    numIter: 1000,
+    initialTemp: 180,
+    coolingFactor: 0.96,
+    minTemp: 1,
+    fit: false,
+  });
+  knowledgeGraph.one("layoutstop", () => {
+    saveGraphPositions();
+    fitVisibleGraph();
+  });
+  layout.run();
+}
+
+function storedGraphPositions() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(GRAPH_POSITION_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(([, position]) => (
+        position && Number.isFinite(position.x) && Number.isFinite(position.y)
+      )),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveGraphPositions() {
+  if (!knowledgeGraph) return;
+  const positions = {};
+  knowledgeGraph.nodes().forEach((node) => {
+    const position = node.position();
+    positions[node.id()] = { x: position.x, y: position.y };
+  });
+  try {
+    window.localStorage.setItem(GRAPH_POSITION_KEY, JSON.stringify(positions));
+  } catch {
+    // The graph remains usable when browser storage is unavailable.
+  }
+}
+
+function clearStoredGraphPositions() {
+  try {
+    window.localStorage.removeItem(GRAPH_POSITION_KEY);
+  } catch {
+    // The current layout can still be recalculated in memory.
+  }
+}
+
+function destroyKnowledgeGraph() {
+  if (!knowledgeGraph) return;
+  knowledgeGraph.destroy();
+  knowledgeGraph = null;
+}
+
+function queueGraphResize() {
+  window.clearTimeout(graphResizeTimer);
+  graphResizeTimer = window.setTimeout(() => {
+    if (!knowledgeGraph) return;
+    knowledgeGraph.resize();
+    fitVisibleGraph(false);
+  }, 290);
+}
+
+function reducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function categoryColor(category) {
+  return GRAPH_COLORS[category] || "#879096";
 }
 
 function renderActivity() {
@@ -346,6 +830,7 @@ async function openPage(path) {
 function closeInspector() {
   document.body.classList.remove("has-inspector");
   state.selectedActivityId = null;
+  queueGraphResize();
 }
 
 function bindActivityRows() {
@@ -484,7 +969,9 @@ async function search(event) {
   const query = document.querySelector("#search-input").value.trim();
   if (!query) return;
   const results = await api(`/api/search?q=${encodeURIComponent(query)}`);
+  destroyKnowledgeGraph();
   state.view = "search";
+  workspace.classList.remove("graph-workspace");
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.remove("is-active"));
   workspace.innerHTML = `
     <header class="view-header">

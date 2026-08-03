@@ -27,6 +27,7 @@ from agentworkmemory.workflows.sync import SyncAgentRecords
 ASSET_TYPES = {
     "app.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
+    "cytoscape.min.js": "text/javascript; charset=utf-8",
 }
 
 
@@ -107,6 +108,10 @@ def create_viewer_app(memory: AgentWorkMemory) -> FastAPI:
     @server.get("/api/pages")
     def pages() -> list[object]:
         return [page.model_dump(mode="json") for page in memory.viewer.pages()]
+
+    @server.get("/api/graph")
+    def graph() -> dict[str, object]:
+        return memory.viewer.graph().model_dump(mode="json")
 
     @server.get("/api/projects")
     def projects() -> list[object]:

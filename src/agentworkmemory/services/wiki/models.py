@@ -10,3 +10,8 @@ class WikiPage(AgentWorkMemoryModel):
     tags: tuple[str, ...] = ()
     source_session_ids: tuple[str, ...] = ()
     outgoing_links: tuple[Path, ...] = ()
+
+
+class WikiPageLink(AgentWorkMemoryModel):
+    source_path: Path
+    target_path: Path

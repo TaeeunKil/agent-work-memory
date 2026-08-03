@@ -14,6 +14,9 @@ from agentworkmemory.services.synchronization.service import SynchronizationServ
 from agentworkmemory.services.vault.service import CATALOG_DIRECTORIES, VaultService
 from agentworkmemory.services.viewer.models import (
     ViewerEvent,
+    ViewerGraph,
+    ViewerGraphEdge,
+    ViewerGraphNode,
     ViewerOverview,
     ViewerPage,
     ViewerPageDetail,
@@ -27,6 +30,7 @@ from agentworkmemory.services.wiki.models import WikiPage
 from agentworkmemory.services.wiki.service import (
     WIKILINK,
     WikiCatalogService,
+    resolved_wiki_links,
     split_frontmatter,
     wiki_backlinks,
 )
@@ -120,6 +124,35 @@ class ViewerService:
         return tuple(
             viewer_page(page, len(backlinks.get(page.path, ()))) for page in pages
         )
+
+    def graph(self) -> ViewerGraph:
+        pages = self.wiki.pages()
+        links = resolved_wiki_links(pages)
+        incoming = {page.path: 0 for page in pages}
+        outgoing = {page.path: 0 for page in pages}
+        for link in links:
+            incoming[link.target_path] += 1
+            outgoing[link.source_path] += 1
+        nodes = tuple(
+            ViewerGraphNode(
+                id=page.path.as_posix(),
+                title=page.title,
+                category=page.category,
+                tags=page.tags,
+                source_count=len(page.source_session_ids),
+                incoming_count=incoming[page.path],
+                outgoing_count=outgoing[page.path],
+            )
+            for page in pages
+        )
+        edges = tuple(
+            ViewerGraphEdge(
+                source=link.source_path.as_posix(),
+                target=link.target_path.as_posix(),
+            )
+            for link in links
+        )
+        return ViewerGraph(nodes=nodes, edges=edges)
 
     def page(self, value: str) -> ViewerPageDetail:
         relative = safe_viewer_page_path(value)

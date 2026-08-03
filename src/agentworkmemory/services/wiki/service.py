@@ -7,7 +7,7 @@ import yaml
 from agentworkmemory.services.sessions.models import AgentSession
 from agentworkmemory.services.sessions.service import SessionsService
 from agentworkmemory.services.vault.service import CATALOG_DIRECTORIES, VaultService
-from agentworkmemory.services.wiki.models import WikiPage
+from agentworkmemory.services.wiki.models import WikiPage, WikiPageLink
 
 HOME_PATH = Path("Home.md")
 INDEX_NAME = "_index.md"
@@ -137,23 +137,39 @@ def normalize_wikilink(value: str) -> Path:
 
 
 def wiki_backlinks(pages: tuple[WikiPage, ...]) -> dict[Path, tuple[WikiPage, ...]]:
+    by_path = {page.path: page for page in pages}
+    incoming: dict[Path, list[WikiPage]] = defaultdict(list)
+    for link in resolved_wiki_links(pages):
+        incoming[link.target_path].append(by_path[link.source_path])
+    return {
+        path: tuple(sorted(sources, key=lambda page: page.title.casefold()))
+        for path, sources in incoming.items()
+    }
+
+
+def resolved_wiki_links(pages: tuple[WikiPage, ...]) -> tuple[WikiPageLink, ...]:
     exact = {page.path: page.path for page in pages}
     by_stem: dict[str, list[Path]] = defaultdict(list)
     for page in pages:
         by_stem[page.path.stem.casefold()].append(page.path)
-    incoming: dict[Path, list[WikiPage]] = defaultdict(list)
+    links: list[WikiPageLink] = []
+    seen: set[tuple[Path, Path]] = set()
     for page in pages:
         for link in page.outgoing_links:
             target = exact.get(link)
             if target is None and len(link.parts) == 1:
                 candidates = by_stem[link.stem.casefold()]
                 target = candidates[0] if len(candidates) == 1 else None
-            if target is not None and target != page.path:
-                incoming[target].append(page)
-    return {
-        path: tuple(sorted(sources, key=lambda page: page.title.casefold()))
-        for path, sources in incoming.items()
-    }
+            identity = (page.path, target) if target is not None else None
+            if target is not None and target != page.path and identity not in seen:
+                seen.add(identity)
+                links.append(
+                    WikiPageLink(
+                        source_path=page.path,
+                        target_path=target,
+                    )
+                )
+    return tuple(links)
 
 
 def render_home(

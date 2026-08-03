@@ -80,6 +80,7 @@ agentworkmemory = [
   "viewer/assets/*.html",
   "viewer/assets/*.css",
   "viewer/assets/*.js",
+  "viewer/assets/*.txt",
 ]
 
 [tool.uv]

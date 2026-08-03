@@ -146,6 +146,56 @@ Project: [[projects/agent-work-memory]].
     assert detail.json()["sessions"][0]["session_id"] == session.session_id
 
 
+def test_viewer_exposes_resolved_durable_wiki_graph(tmp_path: Path):
+    app, session = viewer_fixture(tmp_path)
+    vault = app.vault.require_path()
+    source = f"""sources:
+  - session_id: {session.session_id}
+    provider: manual
+"""
+    (vault / "projects" / "memory-map.md").write_text(
+        f"""---
+{source}---
+# Memory map
+
+Uses [[durable-links]], [[decisions/durable-links]], and
+[[decisions/missing-page]].
+""",
+        encoding="utf-8",
+    )
+    (vault / "decisions" / "durable-links.md").write_text(
+        "# Durable links\n\nBack to [[projects/memory-map]].\n",
+        encoding="utf-8",
+    )
+    app.wiki.refresh()
+    client = TestClient(create_viewer_app(app))
+
+    response = client.get("/api/graph")
+
+    assert response.status_code == 200
+    payload = response.json()
+    nodes = {node["id"]: node for node in payload["nodes"]}
+    assert nodes["projects/memory-map.md"] == {
+        "id": "projects/memory-map.md",
+        "title": "Memory map",
+        "category": "projects",
+        "tags": [],
+        "source_count": 1,
+        "incoming_count": 1,
+        "outgoing_count": 1,
+    }
+    assert payload["edges"] == [
+        {
+            "source": "decisions/durable-links.md",
+            "target": "projects/memory-map.md",
+        },
+        {
+            "source": "projects/memory-map.md",
+            "target": "decisions/durable-links.md",
+        },
+    ]
+
+
 def test_viewer_reports_schedules_in_next_run_order(
     tmp_path: Path,
     monkeypatch,
@@ -406,6 +456,29 @@ def test_viewer_live_activity_log_preserves_end_aware_scrolling(tmp_path: Path):
     assert "scrollbar-color: transparent transparent" in stylesheet.text
     assert ".activity-log pre:focus::-webkit-scrollbar-thumb" in stylesheet.text
     assert "background-color: rgba(242, 239, 231, .58)" in stylesheet.text
+
+
+def test_viewer_packages_offline_knowledge_graph_surface(tmp_path: Path):
+    app, _ = viewer_fixture(tmp_path)
+    client = TestClient(create_viewer_app(app))
+
+    index = client.get("/")
+    javascript = client.get("/assets/app.js")
+    stylesheet = client.get("/assets/app.css")
+    renderer = client.get("/assets/cytoscape.min.js")
+
+    assert index.status_code == 200
+    assert 'data-view="graph"' in index.text
+    assert index.text.index("/assets/cytoscape.min.js") < index.text.index(
+        "/assets/app.js"
+    )
+    assert renderer.status_code == 200
+    assert renderer.headers["content-type"].startswith("text/javascript")
+    assert "cytoscape" in renderer.text[:500].lower()
+    assert 'api("/api/graph")' in javascript.text
+    assert 'id="knowledge-graph"' in javascript.text
+    assert ".workspace.graph-workspace" in stylesheet.text
+    assert "https://" not in index.text
 
 
 def test_serve_cli_uses_loopback_viewer_runner(tmp_path: Path, monkeypatch):

@@ -63,6 +63,26 @@ class ViewerPageDetail(AgentWorkMemoryModel):
     backlinks: tuple[ViewerPage, ...]
 
 
+class ViewerGraphNode(AgentWorkMemoryModel):
+    id: str
+    title: str
+    category: str
+    tags: tuple[str, ...]
+    source_count: int
+    incoming_count: int
+    outgoing_count: int
+
+
+class ViewerGraphEdge(AgentWorkMemoryModel):
+    source: str
+    target: str
+
+
+class ViewerGraph(AgentWorkMemoryModel):
+    nodes: tuple[ViewerGraphNode, ...]
+    edges: tuple[ViewerGraphEdge, ...]
+
+
 class ViewerProject(AgentWorkMemoryModel):
     path: Path
     title: str
