@@ -469,6 +469,13 @@ def test_viewer_packages_offline_knowledge_graph_surface(tmp_path: Path):
 
     assert index.status_code == 200
     assert 'data-view="graph"' in index.text
+    assert 'id="rail-toggle"' in index.text
+    assert 'aria-controls="primary-navigation"' in index.text
+    assert '<footer id="utility-footer" class="utility-footer">' in index.text
+    assert 'class="topbar"' not in index.text
+    assert index.text.index('id="workspace"') < index.text.index(
+        'id="utility-footer"'
+    )
     assert index.text.index("/assets/cytoscape.min.js") < index.text.index(
         "/assets/app.js"
     )
@@ -477,7 +484,18 @@ def test_viewer_packages_offline_knowledge_graph_surface(tmp_path: Path):
     assert "cytoscape" in renderer.text[:500].lower()
     assert 'api("/api/graph")' in javascript.text
     assert 'id="knowledge-graph"' in javascript.text
+    assert 'role="listbox"' in javascript.text
+    assert "selectMenuMarkup" in javascript.text
+    assert "graphColorClass" in javascript.text
+    assert 'style="--legend-color' not in javascript.text
+    assert "RAIL_COLLAPSED_KEY" in javascript.text
     assert ".workspace.graph-workspace" in stylesheet.text
+    assert ".workspace.graph-workspace + .utility-footer" in stylesheet.text
+    assert "min-height: calc(100svh - 58px)" in stylesheet.text
+    assert "height: calc(100svh - 58px)" in stylesheet.text
+    assert ".select-menu-popover" in stylesheet.text
+    assert "flex: 0 0 8px" in stylesheet.text
+    assert "body.rail-collapsed" in stylesheet.text
     assert "https://" not in index.text
 
 

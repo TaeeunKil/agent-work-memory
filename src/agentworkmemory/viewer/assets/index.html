@@ -9,19 +9,51 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="rail">
+      <aside id="primary-rail" class="rail">
         <a class="brand" href="#/overview" aria-label="Agent Work Memory home">
           <span class="brand-mark">AWM</span>
-          <span>Agent Work<br>Memory</span>
+          <span class="brand-name">Agent Work<br>Memory</span>
         </a>
 
-        <nav class="primary-nav" aria-label="Primary">
-          <button class="nav-item is-active" data-view="overview">Today</button>
-          <button class="nav-item" data-view="projects">Projects</button>
-          <button class="nav-item" data-view="sessions">Sessions</button>
-          <button class="nav-item" data-view="knowledge">Knowledge</button>
-          <button class="nav-item" data-view="graph">Graph</button>
-          <button class="nav-item" data-view="activity">Activity</button>
+        <button
+          id="rail-toggle"
+          class="rail-toggle"
+          type="button"
+          aria-controls="primary-navigation"
+          aria-expanded="true"
+          aria-label="Collapse sidebar"
+          title="Collapse sidebar"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m10 3-5 5 5 5" />
+          </svg>
+        </button>
+
+        <nav id="primary-navigation" class="primary-nav" aria-label="Primary">
+          <button class="nav-item is-active" data-view="overview" title="Today">
+            <span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 18 18"><circle cx="9" cy="9" r="5"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2"/></svg></span>
+            <span class="nav-label">Today</span>
+          </button>
+          <button class="nav-item" data-view="projects" title="Projects">
+            <span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 18 18"><path d="M2.5 5.5h5l1.4 1.7h6.6v7.3h-13z"/><path d="M2.5 5.5V3.7h4.1l1.3 1.8"/></svg></span>
+            <span class="nav-label">Projects</span>
+          </button>
+          <button class="nav-item" data-view="sessions" title="Sessions">
+            <span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 18 18"><circle cx="9" cy="9" r="6.5"/><path d="M9 5v4l3 2"/></svg></span>
+            <span class="nav-label">Sessions</span>
+          </button>
+          <button class="nav-item" data-view="knowledge" title="Knowledge">
+            <span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 18 18"><path d="M3 3.5h4.2c1 0 1.8.8 1.8 1.8v9.2c0-1-.8-1.8-1.8-1.8H3zM15 3.5h-4.2c-1 0-1.8.8-1.8 1.8v9.2c0-1 .8-1.8 1.8-1.8H15z"/></svg></span>
+            <span class="nav-label">Knowledge</span>
+          </button>
+          <button class="nav-item" data-view="graph" title="Graph">
+            <span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 18 18"><circle cx="4" cy="5" r="1.8"/><circle cx="14" cy="4" r="1.8"/><circle cx="11" cy="14" r="1.8"/><path d="m5.8 4.8 6.4-.6M5.3 6.5l4.4 6M13.5 5.8 11.7 12.2"/></svg></span>
+            <span class="nav-label">Graph</span>
+          </button>
+          <button class="nav-item" data-view="activity" title="Activity">
+            <span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 18 18"><path d="M2 9h3l1.6-4.2L10 13l1.7-4H16"/></svg></span>
+            <span class="nav-label">Activity</span>
+          </button>
         </nav>
 
         <div class="rail-status">
@@ -31,7 +63,11 @@
       </aside>
 
       <main class="main">
-        <header class="topbar">
+        <section id="workspace" class="workspace" aria-live="polite">
+          <div class="loading">Opening your memory…</div>
+        </section>
+
+        <footer id="utility-footer" class="utility-footer">
           <form id="search-form" class="search" role="search">
             <label class="sr-only" for="search-input">Search Agent Work Memory</label>
             <span class="search-glyph" aria-hidden="true">⌕</span>
@@ -44,7 +80,7 @@
             <button class="search-submit" type="submit" aria-label="Search">↵</button>
             <kbd>Enter</kbd>
           </form>
-          <div class="topbar-actions">
+          <div class="utility-actions">
             <button id="sync-button" class="secondary-action" type="button">
               Sync transcripts
             </button>
@@ -52,11 +88,7 @@
               Build Wiki
             </button>
           </div>
-        </header>
-
-        <section id="workspace" class="workspace" aria-live="polite">
-          <div class="loading">Opening your memory…</div>
-        </section>
+        </footer>
       </main>
 
       <aside id="inspector" class="inspector" aria-label="Selected item">

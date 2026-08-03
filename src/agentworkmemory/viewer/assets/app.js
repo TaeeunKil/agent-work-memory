@@ -16,6 +16,7 @@ const state = {
 };
 
 const GRAPH_POSITION_KEY = "awm.knowledge-graph.positions.v1";
+const RAIL_COLLAPSED_KEY = "awm.viewer.rail-collapsed.v1";
 const GRAPH_COLORS = {
   projects: "#e25832",
   decisions: "#d9a441",
@@ -28,13 +29,17 @@ const GRAPH_COLORS = {
 
 let knowledgeGraph = null;
 let graphResizeTimer = null;
+let activeSelectMenu = null;
 
 const workspace = document.querySelector("#workspace");
 const activityInspector = document.querySelector("#inspector");
 const inspector = document.querySelector("#inspector-content");
 const syncButton = document.querySelector("#sync-button");
 const buildWikiButton = document.querySelector("#build-wiki-button");
+const railToggle = document.querySelector("#rail-toggle");
 const toast = document.querySelector("#toast");
+
+initializeRail();
 
 document.querySelectorAll(".nav-item").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
@@ -44,8 +49,16 @@ document.querySelector("#close-inspector").addEventListener("click", closeInspec
 document.querySelector("#search-form").addEventListener("submit", search);
 syncButton.addEventListener("click", syncTranscripts);
 buildWikiButton.addEventListener("click", openBuildWiki);
+railToggle.addEventListener("click", () => {
+  setRailCollapsed(!document.body.classList.contains("rail-collapsed"));
+});
+document.addEventListener("pointerdown", (event) => {
+  if (activeSelectMenu && !activeSelectMenu.root.contains(event.target)) {
+    activeSelectMenu.close(false);
+  }
+});
 window.addEventListener("hashchange", openHashTarget);
-window.addEventListener("resize", queueGraphResize);
+window.addEventListener("resize", () => queueGraphResize());
 
 boot();
 
@@ -235,6 +248,31 @@ function renderKnowledge(category = null) {
   bindRows();
 }
 
+function initializeRail() {
+  let collapsed = false;
+  try {
+    collapsed = window.localStorage.getItem(RAIL_COLLAPSED_KEY) === "true";
+  } catch {
+    // A private browser context may decline storage; the rail still works in-session.
+  }
+  setRailCollapsed(collapsed, false);
+}
+
+function setRailCollapsed(collapsed, persist = true) {
+  document.body.classList.toggle("rail-collapsed", collapsed);
+  railToggle.setAttribute("aria-expanded", String(!collapsed));
+  railToggle.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+  railToggle.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  if (persist) {
+    try {
+      window.localStorage.setItem(RAIL_COLLAPSED_KEY, String(collapsed));
+    } catch {
+      // Keep the current layout even when persistence is unavailable.
+    }
+  }
+  queueGraphResize(reducedMotion() ? 0 : 240);
+}
+
 function renderGraph() {
   destroyKnowledgeGraph();
   if (!state.graph) {
@@ -249,6 +287,14 @@ function renderGraph() {
 
   const categories = [...new Set(state.graph.nodes.map((node) => node.category))]
     .sort((a, b) => categoryTitle(a).localeCompare(categoryTitle(b)));
+  const categoryOptions = [
+    { value: "all", label: "All knowledge", tone: "neutral" },
+    ...categories.map((category) => ({
+      value: category,
+      label: categoryTitle(category),
+      tone: category,
+    })),
+  ];
   const isolated = state.graph.nodes.filter(
     (node) => node.incoming_count + node.outgoing_count === 0,
   ).length;
@@ -267,16 +313,12 @@ function renderGraph() {
             <span class="sr-only">Find a knowledge node</span>
             <input id="graph-search" type="search" value="${escapeHtml(state.graphQuery)}" placeholder="Find a node" autocomplete="off">
           </label>
-          <label class="graph-category-control">
-            <span class="sr-only">Filter by knowledge area</span>
-            <select id="graph-category">
-              <option value="all">All knowledge</option>
-              ${categories.map((category) => `
-                <option value="${escapeHtml(category)}" ${state.graphCategory === category ? "selected" : ""}>
-                  ${escapeHtml(categoryTitle(category))}
-                </option>`).join("")}
-            </select>
-          </label>
+          ${selectMenuMarkup({
+            id: "graph-category",
+            label: "Filter by knowledge area",
+            value: state.graphCategory,
+            options: categoryOptions,
+          })}
           <button id="graph-fit" class="graph-tool" type="button">Fit</button>
           <button id="graph-relayout" class="graph-tool" type="button">Re-layout</button>
         </div>
@@ -292,7 +334,7 @@ function renderGraph() {
         <p id="graph-instructions" class="sr-only">Drag to pan, use the mouse wheel to zoom, and select a node to open its Wiki page.</p>
         <div class="graph-legend" aria-label="Knowledge areas">
           ${categories.map((category) => `
-            <span><i style="--legend-color: ${categoryColor(category)}"></i>${escapeHtml(categoryTitle(category))}</span>
+            <span><i class="${graphColorClass(category)}" aria-hidden="true"></i>${escapeHtml(categoryTitle(category))}</span>
           `).join("")}
         </div>
         <div id="graph-readout" class="graph-readout" aria-live="polite">
@@ -310,8 +352,8 @@ function renderGraph() {
     event.preventDefault();
     focusGraphMatches();
   });
-  document.querySelector("#graph-category").addEventListener("change", (event) => {
-    state.graphCategory = event.target.value;
+  bindSelectMenu(document.querySelector("#graph-category"), (value) => {
+    state.graphCategory = value;
     applyGraphFilters();
     fitVisibleGraph();
   });
@@ -322,6 +364,123 @@ function renderGraph() {
   });
 
   window.requestAnimationFrame(mountKnowledgeGraph);
+}
+
+function selectMenuMarkup({ id, label, value, options }) {
+  const selected = options.find((option) => option.value === value) || options[0];
+  return `
+    <div id="${escapeHtml(id)}" class="select-menu graph-category-control" data-value="${escapeHtml(selected.value)}">
+      <span id="${escapeHtml(id)}-label" class="sr-only">${escapeHtml(label)}</span>
+      <button
+        class="select-menu-trigger"
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded="false"
+        aria-controls="${escapeHtml(id)}-options"
+        aria-labelledby="${escapeHtml(id)}-label ${escapeHtml(id)}-value"
+      >
+        <span id="${escapeHtml(id)}-value" class="select-menu-value">
+          <i class="select-menu-dot ${graphColorClass(selected.tone)}" aria-hidden="true"></i>
+          <span class="select-menu-value-text">${escapeHtml(selected.label)}</span>
+        </span>
+        <svg class="select-menu-chevron" viewBox="0 0 12 8" aria-hidden="true"><path d="m1 1 5 5 5-5" /></svg>
+      </button>
+      <div id="${escapeHtml(id)}-options" class="select-menu-popover" role="listbox" aria-labelledby="${escapeHtml(id)}-label" hidden>
+        ${options.map((option, index) => `
+          <button
+            id="${escapeHtml(id)}-option-${index}"
+            class="select-menu-option"
+            type="button"
+            role="option"
+            data-value="${escapeHtml(option.value)}"
+            data-tone="${escapeHtml(option.tone)}"
+            aria-selected="${String(option.value === selected.value)}"
+          >
+            <i class="select-menu-dot ${graphColorClass(option.tone)}" aria-hidden="true"></i>
+            <span>${escapeHtml(option.label)}</span>
+            <svg class="select-menu-check" viewBox="0 0 14 10" aria-hidden="true"><path d="m1 5 4 4 8-8" /></svg>
+          </button>`).join("")}
+      </div>
+    </div>`;
+}
+
+function bindSelectMenu(root, onChange) {
+  const trigger = root.querySelector(".select-menu-trigger");
+  const popover = root.querySelector(".select-menu-popover");
+  const options = [...root.querySelectorAll(".select-menu-option")];
+  const valueText = root.querySelector(".select-menu-value-text");
+  const valueDot = root.querySelector(".select-menu-value .select-menu-dot");
+
+  const selectedIndex = () => Math.max(
+    0,
+    options.findIndex((option) => option.getAttribute("aria-selected") === "true"),
+  );
+  const focusOption = (index) => options[(index + options.length) % options.length].focus();
+
+  const close = (restoreFocus = false) => {
+    popover.hidden = true;
+    root.classList.remove("is-open");
+    trigger.setAttribute("aria-expanded", "false");
+    if (activeSelectMenu?.root === root) activeSelectMenu = null;
+    if (restoreFocus) trigger.focus();
+  };
+  const open = () => {
+    if (activeSelectMenu && activeSelectMenu.root !== root) activeSelectMenu.close(false);
+    popover.hidden = false;
+    root.classList.add("is-open");
+    trigger.setAttribute("aria-expanded", "true");
+    activeSelectMenu = { root, close };
+    window.requestAnimationFrame(() => focusOption(selectedIndex()));
+  };
+  const choose = (option) => {
+    options.forEach((candidate) => {
+      candidate.setAttribute("aria-selected", String(candidate === option));
+    });
+    root.dataset.value = option.dataset.value;
+    valueText.textContent = option.querySelector("span").textContent;
+    valueDot.className = `select-menu-dot ${graphColorClass(option.dataset.tone)}`;
+    close(true);
+    onChange(option.dataset.value);
+  };
+
+  trigger.addEventListener("click", () => {
+    if (popover.hidden) open();
+    else close(false);
+  });
+  trigger.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    open();
+  });
+  options.forEach((option) => option.addEventListener("click", () => choose(option)));
+  popover.addEventListener("keydown", (event) => {
+    const focusedIndex = options.indexOf(document.activeElement);
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusOption(focusedIndex + 1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusOption(focusedIndex - 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      focusOption(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      focusOption(options.length - 1);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      close(true);
+    } else if (event.key === "Tab") {
+      close(false);
+    } else if ((event.key === "Enter" || event.key === " ") && focusedIndex >= 0) {
+      event.preventDefault();
+      choose(options[focusedIndex]);
+    }
+  });
+}
+
+function closeActiveSelectMenu(restoreFocus = false) {
+  if (activeSelectMenu) activeSelectMenu.close(restoreFocus);
 }
 
 async function loadGraph() {
@@ -671,18 +830,19 @@ function clearStoredGraphPositions() {
 }
 
 function destroyKnowledgeGraph() {
+  closeActiveSelectMenu(false);
   if (!knowledgeGraph) return;
   knowledgeGraph.destroy();
   knowledgeGraph = null;
 }
 
-function queueGraphResize() {
+function queueGraphResize(delay = 290) {
   window.clearTimeout(graphResizeTimer);
   graphResizeTimer = window.setTimeout(() => {
     if (!knowledgeGraph) return;
     knowledgeGraph.resize();
     fitVisibleGraph(false);
-  }, 290);
+  }, delay);
 }
 
 function reducedMotion() {
@@ -691,6 +851,10 @@ function reducedMotion() {
 
 function categoryColor(category) {
   return GRAPH_COLORS[category] || "#879096";
+}
+
+function graphColorClass(category) {
+  return `graph-color-${GRAPH_COLORS[category] ? category : "neutral"}`;
 }
 
 function renderActivity() {
