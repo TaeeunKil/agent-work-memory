@@ -42,6 +42,7 @@ from agentworkmemory.services.sessions import SessionsService
 from agentworkmemory.services.sessions.store import SessionsStore
 from agentworkmemory.services.synchronization.service import SynchronizationService
 from agentworkmemory.services.synchronization.store import SynchronizationStore
+from agentworkmemory.services.translations import TranslationService
 from agentworkmemory.services.vault import VaultService
 from agentworkmemory.services.vault_repository import (
     VaultRepositoryAdapter,
@@ -59,6 +60,7 @@ from agentworkmemory.workflows.import_records import ImportAgentRecordsWorkflow
 from agentworkmemory.workflows.remote_sync import SyncRemoteRecordsWorkflow
 from agentworkmemory.workflows.setup import SetupAgentWorkMemoryWorkflow
 from agentworkmemory.workflows.sync import SyncAgentRecordsWorkflow
+from agentworkmemory.workflows.translate import TranslateWikiWorkflow
 from agentworkmemory.workflows.vault_repository import VaultRepositoryWorkflow
 
 
@@ -86,6 +88,8 @@ class AgentWorkMemory:
         setup: SetupAgentWorkMemoryWorkflow,
         sync: SyncAgentRecordsWorkflow,
         synchronization: SynchronizationService,
+        translations: TranslationService,
+        translate: TranslateWikiWorkflow,
         viewer: ViewerService,
         vault_repository: VaultRepositoryWorkflow,
         wiki: WikiCatalogService,
@@ -110,6 +114,8 @@ class AgentWorkMemory:
         self.setup = setup
         self.sync = sync
         self.synchronization = synchronization
+        self.translations = translations
+        self.translate = translate
         self.viewer = viewer
         self.vault_repository = vault_repository
         self.wiki = wiki
@@ -181,6 +187,7 @@ def create_app(
         AutoDistillStore(resolved.state_dir / "auto-distill.json"),
         resolved.state_dir,
     )
+    translations = TranslationService(vault)
     viewer = ViewerService(
         sessions,
         vault,
@@ -188,6 +195,7 @@ def create_app(
         synchronization,
         automation,
         auto_distillation,
+        translations,
     )
     setup = SetupAgentWorkMemoryWorkflow(vault, wiki, sync, automation)
     adapters = (
@@ -233,6 +241,12 @@ def create_app(
         search,
         wiki,
     )
+    translate = TranslateWikiWorkflow(
+        curators,
+        vault,
+        wiki,
+        translations,
+    )
     distill_coordination = DistillCoordination(
         resolved.state_dir / "auto-distill.lock",
         resolved.state_dir / "sync.lock",
@@ -241,6 +255,7 @@ def create_app(
         auto_distillation,
         sessions,
         distill,
+        translate,
         distill_coordination,
     )
     return AgentWorkMemory(
@@ -264,6 +279,8 @@ def create_app(
         setup=setup,
         sync=sync,
         synchronization=synchronization,
+        translations=translations,
+        translate=translate,
         viewer=viewer,
         vault_repository=vault_repository,
         wiki=wiki,

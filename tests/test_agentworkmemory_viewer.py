@@ -14,6 +14,7 @@ from agentworkmemory.services.curators.models import (
     CuratorRunResult,
     CuratorRunStatus,
 )
+from agentworkmemory.services.translations import Locale
 from agentworkmemory.settings import AgentWorkMemoryConfig
 from agentworkmemory.viewer.app import create_viewer_app
 
@@ -93,6 +94,39 @@ See [[systems/context|System context]].
     assert escaped.status_code == 404
 
 
+def test_viewer_resolves_localized_wiki_body_without_changing_page_identity(
+    tmp_path: Path,
+):
+    app, _ = viewer_fixture(tmp_path)
+    canonical = Path("decisions/localized-page.md")
+    target = app.vault.require_path() / canonical
+    target.write_text(
+        "---\nlanguage: en\nshort_title_ko: 지역화 문서\n"
+        "short_title_en: Localized page\n---\n"
+        "# Localized page\n\nThe original body.\n",
+        encoding="utf-8",
+    )
+    app.translations.write(
+        canonical,
+        Locale.KO,
+        "# 지역화 문서\n\n번역된 본문입니다.\n",
+        translator="test",
+    )
+    app.wiki.refresh()
+    client = TestClient(create_viewer_app(app))
+
+    translated = client.get(
+        "/api/page",
+        params={"path": canonical.as_posix(), "locale": "ko"},
+    ).json()
+
+    assert translated["path"] == canonical.as_posix()
+    assert translated["resolved_locale"] == "ko"
+    assert translated["original_locale"] == "en"
+    assert translated["translation_status"] == "current"
+    assert "번역된 본문입니다" in translated["html"]
+
+
 def test_viewer_search_hides_generated_and_duplicate_session_pages(tmp_path: Path):
     app, _ = viewer_fixture(tmp_path)
     client = TestClient(create_viewer_app(app))
@@ -102,6 +136,36 @@ def test_viewer_search_hides_generated_and_duplicate_session_pages(tmp_path: Pat
     assert any(result["kind"] == "session" for result in results)
     assert not any(result["identity"].startswith("inbox/") for result in results)
     assert not any(result["identity"] == "Home.md" for result in results)
+
+
+def test_viewer_search_indexes_translation_under_canonical_page_identity(
+    tmp_path: Path,
+):
+    app, _ = viewer_fixture(tmp_path)
+    canonical = Path("decisions/localized-search.md")
+    (app.vault.require_path() / canonical).write_text(
+        "---\nlanguage: en\n---\n# Localized search\n\nOriginal content.\n",
+        encoding="utf-8",
+    )
+    app.translations.write(
+        canonical,
+        Locale.KO,
+        "# Localized search\n\n번역전용검색어 알마낙지식지도\n",
+        translator="test",
+    )
+    app.wiki.refresh()
+    client = TestClient(create_viewer_app(app))
+
+    results = client.get("/api/search", params={"q": "알마낙지식지도"}).json()
+
+    wiki_results = [result for result in results if result["kind"] == "wiki"]
+    assert [result["identity"].replace("\\", "/") for result in wiki_results] == [
+        canonical.as_posix()
+    ]
+    assert not any(
+        result["identity"].replace("\\", "/").startswith("translations/")
+        for result in results
+    )
 
 
 def test_viewer_aggregates_topics_and_evidence_under_project_hubs(
@@ -201,6 +265,7 @@ Back to [[projects/memory-map]].
         "label": "Memory map",
         "short_title_ko": "메모리 맵",
         "short_title_en": "Memory map",
+        "original_locale": "en",
         "category": "projects",
         "tags": [],
         "source_count": 1,
@@ -475,7 +540,7 @@ def test_viewer_live_activity_log_preserves_end_aware_scrolling(tmp_path: Path):
     assert javascript.status_code == 200
     assert stylesheet.status_code == 200
     assert "data-live-log" in javascript.text
-    assert 'tabindex="0" aria-label="Recent activity log"' in javascript.text
+    assert 'tabindex="0" aria-label="${t("section.recentLog")}"' in javascript.text
     assert "captureEndAwareScroll(detailPeekContent)" in javascript.text
     assert "restoreEndAwareScroll(detailPeekContent, detailPeekScroll)" in (
         javascript.text
@@ -531,6 +596,7 @@ def test_viewer_packages_offline_knowledge_graph_surface(tmp_path: Path):
 
     index = client.get("/")
     javascript = client.get("/assets/app.js")
+    localization = client.get("/assets/i18n.js")
     stylesheet = client.get("/assets/app.css")
     renderer = client.get("/assets/cytoscape.min.js")
 
@@ -547,6 +613,10 @@ def test_viewer_packages_offline_knowledge_graph_surface(tmp_path: Path):
         "/assets/app.js"
     )
     assert renderer.status_code == 200
+    assert localization.status_code == 200
+    assert '"nav.today": "오늘"' in localization.text
+    assert 'data-locale="ko"' in index.text
+    assert 'type="module" src="/assets/app.js"' in index.text
     assert renderer.headers["content-type"].startswith("text/javascript")
     assert "cytoscape" in renderer.text[:500].lower()
     assert 'api("/api/graph")' in javascript.text

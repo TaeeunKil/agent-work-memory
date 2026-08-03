@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 
@@ -63,10 +64,32 @@ class SearchService:
             body = "\n".join(event.content for event in events)
             documents.append(("session", session.session_id, session.title, body))
         vault_path = self.vault.require_path()
+        wiki_documents: dict[str, WikiSearchDocument] = {}
+        translated_bodies: list[tuple[str, str]] = []
         for path in self.vault.markdown_files():
             relative = path.relative_to(vault_path).as_posix()
             raw = path.read_text(encoding="utf-8")
-            documents.append(("wiki", relative, markdown_title(path, raw), raw))
+            canonical = translated_canonical_path(Path(relative))
+            if canonical is not None:
+                translated_bodies.append((canonical, raw))
+                continue
+            wiki_documents[relative] = WikiSearchDocument(
+                title=markdown_title(path, raw),
+                bodies=[raw],
+            )
+        for canonical, raw in translated_bodies:
+            document = wiki_documents.get(canonical)
+            if document is not None:
+                document.bodies.append(raw)
+        documents.extend(
+            (
+                "wiki",
+                identity,
+                document.title,
+                "\n\n".join(document.bodies),
+            )
+            for identity, document in wiki_documents.items()
+        )
         with open_database(self.database_path) as connection:
             connection.execute("DELETE FROM search_documents")
             connection.executemany(
@@ -148,6 +171,19 @@ def markdown_title(path: Path, raw: str) -> str:
         if line.startswith("# "):
             return line[2:].strip()
     return path.stem
+
+
+@dataclass
+class WikiSearchDocument:
+    title: str
+    bodies: list[str] = field(default_factory=list)
+
+
+def translated_canonical_path(relative: Path) -> str | None:
+    parts = relative.parts
+    if len(parts) < 3 or parts[0] != "translations":
+        return None
+    return Path(*parts[2:]).as_posix()
 
 
 def vault_digest(vault: VaultService) -> str:

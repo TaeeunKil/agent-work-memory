@@ -1,9 +1,12 @@
 from datetime import datetime
 from pathlib import Path
 
+from pydantic import field_serializer
+
 from agentworkmemory.core import AgentWorkMemoryModel
 from agentworkmemory.services.activity.models import ActivityTask
 from agentworkmemory.services.sessions.models import AgentEventKind, SessionState
+from agentworkmemory.services.translations.models import Locale, TranslationStatus
 
 
 class ViewerOverview(AgentWorkMemoryModel):
@@ -49,10 +52,17 @@ class ViewerSessionDetail(AgentWorkMemoryModel):
 class ViewerPage(AgentWorkMemoryModel):
     path: Path
     title: str
+    short_title_ko: str | None
+    short_title_en: str | None
+    original_locale: Locale
     category: str
     tags: tuple[str, ...]
     source_session_ids: tuple[str, ...]
     backlink_count: int
+
+    @field_serializer("path")
+    def serialize_path(self, value: Path) -> str:
+        return value.as_posix()
 
 
 class ViewerPageDetail(AgentWorkMemoryModel):
@@ -60,7 +70,15 @@ class ViewerPageDetail(AgentWorkMemoryModel):
     title: str
     category: str
     html: str
+    requested_locale: Locale
+    resolved_locale: Locale
+    original_locale: Locale
+    translation_status: TranslationStatus
     backlinks: tuple[ViewerPage, ...]
+
+    @field_serializer("path")
+    def serialize_path(self, value: Path) -> str:
+        return value.as_posix()
 
 
 class ViewerGraphNode(AgentWorkMemoryModel):
@@ -69,6 +87,7 @@ class ViewerGraphNode(AgentWorkMemoryModel):
     label: str
     short_title_ko: str | None
     short_title_en: str | None
+    original_locale: Locale
     category: str
     tags: tuple[str, ...]
     source_count: int
@@ -91,6 +110,10 @@ class ViewerProject(AgentWorkMemoryModel):
     title: str
     topic_count: int
     source_session_ids: tuple[str, ...]
+
+    @field_serializer("path")
+    def serialize_path(self, value: Path) -> str:
+        return value.as_posix()
 
 
 class ViewerProjectDetail(AgentWorkMemoryModel):

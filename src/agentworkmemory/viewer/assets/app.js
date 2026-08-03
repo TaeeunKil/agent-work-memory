@@ -1,3 +1,11 @@
+import {
+  localeName,
+  pageLabel,
+  persistLocale,
+  preferredLocale,
+  translate,
+} from "/assets/i18n.js";
+
 const state = {
   view: "overview",
   overview: null,
@@ -13,6 +21,8 @@ const state = {
   activity: [],
   schedules: [],
   selectedActivityId: null,
+  locale: preferredLocale(),
+  pageLocaleOverrides: {},
 };
 
 const GRAPH_POSITION_KEY = "awm.knowledge-graph.positions.v1";
@@ -50,6 +60,7 @@ const buildWikiButton = document.querySelector("#build-wiki-button");
 const railToggle = document.querySelector("#rail-toggle");
 const toast = document.querySelector("#toast");
 
+initializeLocale();
 initializeRail();
 
 document.querySelectorAll(".nav-item").forEach((button) => {
@@ -68,6 +79,9 @@ syncButton.addEventListener("click", syncTranscripts);
 buildWikiButton.addEventListener("click", openBuildWiki);
 railToggle.addEventListener("click", () => {
   setRailCollapsed(!document.body.classList.contains("rail-collapsed"));
+});
+document.querySelectorAll("[data-locale]").forEach((button) => {
+  button.addEventListener("click", () => setLocale(button.dataset.locale));
 });
 document.addEventListener("pointerdown", (event) => {
   if (activeSelectMenu && !activeSelectMenu.root.contains(event.target)) {
@@ -88,6 +102,72 @@ window.addEventListener("resize", () => {
 
 boot();
 
+function t(key, values = {}) {
+  return translate(state.locale, key, values);
+}
+
+function initializeLocale() {
+  applyLocaleToChrome();
+}
+
+function setLocale(locale) {
+  if (locale === state.locale) return;
+  const graphViewport = knowledgeGraph
+    ? { zoom: knowledgeGraph.zoom(), pan: knowledgeGraph.pan() }
+    : null;
+  if (knowledgeGraph) saveGraphPositions();
+  state.locale = locale;
+  persistLocale(locale);
+  applyLocaleToChrome();
+  updateRailStatus();
+  render();
+  if (graphViewport && state.view === "graph") {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      if (!knowledgeGraph) return;
+      knowledgeGraph.zoom(graphViewport.zoom);
+      knowledgeGraph.pan(graphViewport.pan);
+    }));
+  }
+  if (renderedDetailPeekRoute) {
+    openDetailPeekRoute(renderedDetailPeekRoute, { fromHistory: true });
+  }
+}
+
+function applyLocaleToChrome() {
+  document.documentElement.lang = state.locale;
+  const navKeys = {
+    overview: "nav.today",
+    projects: "nav.projects",
+    sessions: "nav.sessions",
+    knowledge: "nav.knowledge",
+    graph: "nav.graph",
+    activity: "nav.activity",
+  };
+  document.querySelector("#primary-navigation").setAttribute("aria-label", t("nav.primary"));
+  document.querySelectorAll(".nav-item").forEach((button) => {
+    const label = t(navKeys[button.dataset.view]);
+    button.title = label;
+    button.querySelector(".nav-label").textContent = label;
+  });
+  document.querySelector("#search-input").placeholder = t("search.placeholder");
+  document.querySelector("#search-input").setAttribute("aria-label", t("action.search"));
+  document.querySelector("#search-form").setAttribute("aria-label", t("action.search"));
+  document.querySelector(".search-submit").setAttribute("aria-label", t("action.search"));
+  syncButton.textContent = t("action.sync");
+  buildWikiButton.textContent = t("action.buildWiki");
+  document.querySelector(".language-switch").setAttribute("aria-label", t("language.label"));
+  document.querySelectorAll("[data-locale]").forEach((button) => {
+    const selected = button.dataset.locale === state.locale;
+    button.setAttribute("aria-pressed", String(selected));
+    button.title = localeName(button.dataset.locale, state.locale);
+  });
+  document.querySelector("#close-detail-peek").setAttribute("aria-label", t("action.close"));
+  document.querySelector("#detail-peek-backdrop").setAttribute("aria-label", t("action.close"));
+  detailPeekToc.setAttribute("aria-label", t("wiki.onThisPage"));
+  detailPeekTocToggle.querySelector("span").textContent = t("wiki.onThisPage");
+  updateDetailPeekSizeControl();
+}
+
 async function boot() {
   window.setInterval(refreshActivity, 2000);
   window.setInterval(refreshSchedules, 30000);
@@ -103,7 +183,7 @@ async function boot() {
       button.classList.toggle("is-active", button.dataset.view === "activity");
     });
     renderActivity();
-    showToast(`Vault data is busy. Activity remains live.`);
+    showToast(t("status.vaultBusy"));
   }
 }
 
@@ -151,10 +231,10 @@ async function refreshActivity() {
 function updateRailStatus() {
   const running = state.activity.find((run) => run.status === "running");
   const label = running
-    ? `${activityTaskLabel(running.task)} running`
+    ? t("status.running", { task: activityTaskLabel(running.task) })
     : state.overview?.last_sync_at
-      ? `Synced ${relativeTime(state.overview.last_sync_at)}`
-      : "Local vault";
+      ? t("status.synced", { time: relativeTime(state.overview.last_sync_at) })
+      : t("status.localVault");
   document.querySelector("#rail-status").textContent = label;
   document.querySelector(".status-dot").classList.toggle(
     "is-running",
@@ -188,14 +268,14 @@ function renderProjects() {
   workspace.innerHTML = `
     <header class="view-header">
       <div>
-        <p class="eyebrow">Connected knowledge</p>
-        <h1>Projects</h1>
+        <p class="eyebrow">${t("projects.eyebrow")}</p>
+        <h1>${t("nav.projects")}</h1>
       </div>
-      <p class="quiet">Each project gathers its canonical topic pages and the sessions that support them.</p>
+      <p class="quiet">${t("projects.description")}</p>
     </header>
     <section class="section-block">
-      ${sectionHeading("Project hubs", `${state.projects.length} total`)}
-      <div class="record-list">${state.projects.map(projectRow).join("") || emptyRow("Build the Wiki to create the first project hub.")}</div>
+      ${sectionHeading(t("section.projectHubs"), t("count.total", { count: state.projects.length }))}
+      <div class="record-list">${state.projects.map(projectRow).join("") || emptyRow(t("empty.projects"))}</div>
     </section>
   `;
   bindRows();
@@ -209,26 +289,26 @@ function renderOverview() {
   workspace.innerHTML = `
     <header class="view-header">
       <div>
-        <p class="eyebrow">Private work memory</p>
-        <h1>Today</h1>
+        <p class="eyebrow">${t("overview.eyebrow")}</p>
+        <h1>${t("nav.today")}</h1>
       </div>
-      <p class="quiet">What your agents did, what is worth keeping, and where the evidence lives.</p>
+      <p class="quiet">${t("overview.description")}</p>
     </header>
     <div class="measure-strip">
-      ${measure(state.overview.session_count, "Retained sessions")}
-      ${measure(state.overview.knowledge_count, "Durable Wiki pages")}
-      ${measure(state.overview.pending_distill_count, "Waiting to distill")}
+      ${measure(state.overview.session_count, t("measure.sessions"))}
+      ${measure(state.overview.knowledge_count, t("measure.pages"))}
+      ${measure(state.overview.pending_distill_count, t("measure.pending"))}
     </div>
     <section class="section-block">
-      ${sectionHeading("Recent sessions", `${recent.length} shown`)}
-      <div class="record-list">${recent.map(sessionRow).join("") || emptyRow("No sessions retained yet.")}</div>
+      ${sectionHeading(t("section.recentSessions"), t("count.shown", { count: recent.length }))}
+      <div class="record-list">${recent.map(sessionRow).join("") || emptyRow(t("empty.sessions"))}</div>
     </section>
     <section class="section-block">
-      ${sectionHeading("Waiting to distill", `${pending.length} sessions`)}
-      <div class="record-list">${pending.slice(0, 6).map(sessionRow).join("") || emptyRow("Nothing waiting.")}</div>
+      ${sectionHeading(t("section.waiting"), t("count.sessions", { count: pending.length }))}
+      <div class="record-list">${pending.slice(0, 6).map(sessionRow).join("") || emptyRow(t("empty.waiting"))}</div>
     </section>
     <section class="section-block">
-      ${sectionHeading("Knowledge areas", `${state.pages.length} pages`)}
+      ${sectionHeading(t("section.knowledgeAreas"), t("count.pages", { count: state.pages.length }))}
       ${categoryGrid()}
     </section>
   `;
@@ -239,14 +319,14 @@ function renderSessions() {
   workspace.innerHTML = `
     <header class="view-header">
       <div>
-        <p class="eyebrow">Evidence layer</p>
-        <h1>Sessions</h1>
+        <p class="eyebrow">${t("sessions.eyebrow")}</p>
+        <h1>${t("nav.sessions")}</h1>
       </div>
-      <p class="quiet">Codex, Claude, manual notes, and imported local-agent records in one chronology.</p>
+      <p class="quiet">${t("sessions.description")}</p>
     </header>
     <section class="section-block">
-      ${sectionHeading("All retained sessions", `${state.sessions.length} total`)}
-      <div class="record-list">${state.sessions.map(sessionRow).join("") || emptyRow("No sessions retained yet.")}</div>
+      ${sectionHeading(t("section.allSessions"), t("count.total", { count: state.sessions.length }))}
+      <div class="record-list">${state.sessions.map(sessionRow).join("") || emptyRow(t("empty.sessions"))}</div>
     </section>
   `;
   bindRows();
@@ -256,19 +336,19 @@ function renderKnowledge(category = null) {
   const pages = category
     ? state.pages.filter((page) => page.category === category)
     : state.pages;
-  const title = category ? categoryTitle(category) : "Knowledge";
+  const title = category ? categoryTitle(category) : t("nav.knowledge");
   workspace.innerHTML = `
     <header class="view-header">
       <div>
-        <p class="eyebrow">Durable layer</p>
+        <p class="eyebrow">${t("knowledge.eyebrow")}</p>
         <h1>${escapeHtml(title)}</h1>
       </div>
-      <p class="quiet">Decisions, systems, problems, and procedures promoted from selected evidence.</p>
+      <p class="quiet">${t("knowledge.description")}</p>
     </header>
     ${category ? "" : `<section class="section-block">${categoryGrid()}</section>`}
     <section class="section-block">
-      ${sectionHeading(category ? `${title} pages` : "All Wiki pages", `${pages.length} total`)}
-      <div class="record-list">${pages.map(pageRow).join("") || emptyRow("No durable pages yet.")}</div>
+      ${sectionHeading(category ? `${title} · ${t("count.pages", { count: pages.length })}` : t("section.allWiki"), t("count.total", { count: pages.length }))}
+      <div class="record-list">${pages.map(pageRow).join("") || emptyRow(t("empty.pages"))}</div>
     </section>
   `;
   bindRows();
@@ -287,8 +367,9 @@ function initializeRail() {
 function setRailCollapsed(collapsed, persist = true) {
   document.body.classList.toggle("rail-collapsed", collapsed);
   railToggle.setAttribute("aria-expanded", String(!collapsed));
-  railToggle.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
-  railToggle.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  const label = collapsed ? t("action.expandSidebar") : t("action.collapseSidebar");
+  railToggle.setAttribute("aria-label", label);
+  railToggle.title = label;
   if (persist) {
     try {
       window.localStorage.setItem(RAIL_COLLAPSED_KEY, String(collapsed));
@@ -305,7 +386,7 @@ function renderGraph() {
     workspace.innerHTML = `
       <section class="graph-shell graph-shell-loading">
         <div class="graph-loading-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-        <p>Mapping durable knowledge&hellip;</p>
+        <p>${t("graph.loading")}</p>
       </section>`;
     loadGraph();
     return;
@@ -314,7 +395,7 @@ function renderGraph() {
   const categories = [...new Set(state.graph.nodes.map((node) => node.category))]
     .sort((a, b) => categoryTitle(a).localeCompare(categoryTitle(b)));
   const categoryOptions = [
-    { value: "all", label: "All knowledge", tone: "neutral" },
+    { value: "all", label: t("graph.all"), tone: "neutral" },
     ...categories.map((category) => ({
       value: category,
       label: categoryTitle(category),
@@ -328,25 +409,25 @@ function renderGraph() {
     <section class="graph-shell">
       <header class="graph-toolbar">
         <div class="graph-title">
-          <p class="eyebrow">Durable knowledge</p>
+          <p class="eyebrow">${t("graph.eyebrow")}</p>
           <div>
-            <h1>Graph</h1>
-            <p id="graph-summary">${state.graph.nodes.length} notes &middot; ${state.graph.edges.length} links &middot; ${isolated} isolated</p>
+            <h1>${t("nav.graph")}</h1>
+            <p id="graph-summary">${t("graph.summary", { notes: state.graph.nodes.length, links: state.graph.edges.length, isolated })}</p>
           </div>
         </div>
         <div class="graph-controls">
           <label class="graph-search">
-            <span class="sr-only">Find a knowledge node</span>
-            <input id="graph-search" type="search" value="${escapeHtml(state.graphQuery)}" placeholder="Find a node" autocomplete="off">
+            <span class="sr-only">${t("graph.searchLabel")}</span>
+            <input id="graph-search" type="search" value="${escapeHtml(state.graphQuery)}" placeholder="${t("graph.search")}" autocomplete="off">
           </label>
           ${selectMenuMarkup({
             id: "graph-category",
-            label: "Filter by knowledge area",
+            label: t("graph.filter"),
             value: state.graphCategory,
             options: categoryOptions,
           })}
-          <button id="graph-fit" class="graph-tool" type="button">Fit</button>
-          <button id="graph-relayout" class="graph-tool" type="button">Re-layout</button>
+          <button id="graph-fit" class="graph-tool" type="button">${t("graph.fit")}</button>
+          <button id="graph-relayout" class="graph-tool" type="button">${t("graph.relayout")}</button>
         </div>
       </header>
       <div class="graph-stage">
@@ -354,17 +435,17 @@ function renderGraph() {
           id="knowledge-graph"
           role="application"
           tabindex="0"
-          aria-label="Interactive graph of durable Wiki pages and their links"
+          aria-label="${t("graph.canvasLabel")}"
           aria-describedby="graph-instructions"
         ></div>
-        <p id="graph-instructions" class="sr-only">Drag to pan, use the mouse wheel to zoom, and select a node to open its Wiki page.</p>
-        <div class="graph-legend" aria-label="Knowledge areas">
+        <p id="graph-instructions" class="sr-only">${t("graph.instructions")}</p>
+        <div class="graph-legend" aria-label="${t("graph.legend")}">
           ${categories.map((category) => `
             <span><i class="${graphColorClass(category)}" aria-hidden="true"></i>${escapeHtml(categoryTitle(category))}</span>
           `).join("")}
         </div>
         <div id="graph-readout" class="graph-readout" aria-live="polite">
-          <span>Hover a node to trace its immediate context</span>
+          <span>${t("graph.hint")}</span>
         </div>
       </div>
     </section>`;
@@ -530,11 +611,11 @@ async function loadGraph() {
 function mountKnowledgeGraph() {
   const container = document.querySelector("#knowledge-graph");
   if (!container || !state.graph || typeof window.cytoscape !== "function") {
-    if (container) container.innerHTML = `<p class="graph-fallback">Graph renderer unavailable.</p>`;
+    if (container) container.innerHTML = `<p class="graph-fallback">${t("graph.unavailable")}</p>`;
     return;
   }
   if (state.graph.nodes.length === 0) {
-    container.innerHTML = `<p class="graph-fallback">Build the Wiki to create the first knowledge node.</p>`;
+    container.innerHTML = `<p class="graph-fallback">${t("graph.empty")}</p>`;
     return;
   }
 
@@ -548,6 +629,7 @@ function mountKnowledgeGraph() {
     ...state.graph.nodes.map((node) => ({
       data: {
         ...node,
+        label: pageLabel(node, state.locale),
         degree: node.incoming_count + node.outgoing_count,
         color: categoryColor(node.category),
       },
@@ -762,12 +844,12 @@ function updateGraphReadout(node) {
   const readout = document.querySelector("#graph-readout");
   if (!readout) return;
   if (!node) {
-    readout.innerHTML = `<span>Hover a node to trace its immediate context</span>`;
+    readout.innerHTML = `<span>${t("graph.hint")}</span>`;
     return;
   }
   const degree = node.data("incoming_count") + node.data("outgoing_count");
   readout.innerHTML = `
-    <strong>${escapeHtml(node.data("title"))}</strong>
+    <strong>${escapeHtml(node.data("label"))}</strong>
     <span>${escapeHtml(categoryTitle(node.data("category")))} &middot; ${degree} connection${degree === 1 ? "" : "s"}</span>`;
 }
 
@@ -778,8 +860,13 @@ function updateGraphSummary() {
   const visibleNodes = knowledgeGraph.nodes().not(".graph-filtered");
   const visibleEdges = knowledgeGraph.edges().not(".graph-filtered");
   const matches = knowledgeGraph.nodes(".graph-match").not(".graph-filtered");
-  const suffix = state.graphQuery ? ` &middot; ${matches.length} matches` : "";
-  summary.innerHTML = `${visibleNodes.length} notes &middot; ${visibleEdges.length} links${suffix}`;
+  const suffix = state.graphQuery
+    ? ` &middot; ${t("graph.matches", { count: matches.length })}`
+    : "";
+  summary.innerHTML = `${t("graph.filteredSummary", {
+    notes: visibleNodes.length,
+    links: visibleEdges.length,
+  })}${suffix}`;
 }
 
 function fitVisibleGraph(animate = true) {
@@ -935,7 +1022,7 @@ function categoryGrid() {
       <div class="category">
         <button type="button" data-category="${category}">
           <strong>${escapeHtml(categoryTitle(category))}</strong>
-          <span>${count} page${count === 1 ? "" : "s"}</span>
+          <span>${t("count.pages", { count })}</span>
         </button>
       </div>`;
   }).join("")}</div>`;
@@ -1047,12 +1134,10 @@ function toggleDetailPeekSize() {
 function updateDetailPeekSizeControl() {
   const isExpanded = document.body.classList.contains("detail-peek-expanded");
   const label = isExpanded
-    ? "Return detail to preview size"
-    : "Expand detail to full screen";
+    ? t("action.restoreDetail")
+    : t("action.expandDetail");
   expandDetailPeekButton.setAttribute("aria-label", label);
-  expandDetailPeekButton.title = isExpanded
-    ? "Return to preview"
-    : "Expand to full screen";
+  expandDetailPeekButton.title = label;
   expandDetailPeekButton.setAttribute("aria-pressed", String(isExpanded));
 }
 
@@ -1201,67 +1286,120 @@ function bindWikiLinks() {
 }
 
 async function openProject(path, options = {}) {
-  const detail = await api(`/api/project?path=${encodeURIComponent(path)}`);
+  const locale = requestedPageLocale(path);
+  const detail = await api(`/api/project?path=${encodeURIComponent(path)}&locale=${locale}`);
   detailPeekContent.innerHTML = `
-    <p class="eyebrow">Project hub</p>
+    <p class="eyebrow">${t("detail.projectHub")}</p>
     <h2 id="detail-peek-title">${escapeHtml(detail.page.title)}</h2>
     <div class="detail-meta">
-      <span>${detail.topics.length} topic pages</span>
-      <span>${detail.sessions.length} source sessions</span>
+      <span>${t("count.topicPages", { count: detail.topics.length })}</span>
+      <span>${t("count.sourceSessions", { count: detail.sessions.length })}</span>
     </div>
+    ${translationControls(detail.page, path)}
     <article class="markdown">${detail.page.html}</article>
     <section class="detail-section">
-      <p class="eyebrow">Topics</p>
-      <div class="record-list">${detail.topics.map(pageRow).join("") || emptyRow("No linked topic pages yet.")}</div>
+      <p class="eyebrow">${t("section.topics")}</p>
+      <div class="record-list">${detail.topics.map(pageRow).join("") || emptyRow(t("empty.topicPages"))}</div>
     </section>
     <section class="detail-section">
-      <p class="eyebrow">Evidence</p>
-      <div class="record-list">${detail.sessions.map(sessionRow).join("") || emptyRow("No source sessions cited yet.")}</div>
+      <p class="eyebrow">${t("section.evidence")}</p>
+      <div class="record-list">${detail.sessions.map(sessionRow).join("") || emptyRow(t("empty.sourceSessions"))}</div>
     </section>
   `;
-  showDetailPeek("Project hub", { kind: "project", id: path }, options);
+  showDetailPeek(t("detail.projectHub"), { kind: "project", id: path }, options);
   bindRows(detailPeekContent);
   bindWikiLinks();
+  bindPageLanguageControl(path);
 }
 
 async function openSession(sessionId, options = {}) {
   const detail = await api(`/api/sessions/${encodeURIComponent(sessionId)}`);
   detailPeekContent.innerHTML = `
-    <p class="eyebrow">${escapeHtml(detail.session.provider)} session</p>
+    <p class="eyebrow">${escapeHtml(t("session.provider", { provider: detail.session.provider }))}</p>
     <h2 id="detail-peek-title">${escapeHtml(detail.session.title)}</h2>
     <div class="detail-meta">
-      <span>${detail.session.event_count} events</span>
-      <span>${detail.session.content_captured ? "content retained" : "metadata only"}</span>
-      <span>${detail.session.distilled_at ? "distilled" : "not distilled"}</span>
+      <span>${t("count.events", { count: detail.session.event_count })}</span>
+      <span>${detail.session.content_captured ? t("session.contentRetained") : t("session.metadataOnly")}</span>
+      <span>${detail.session.distilled_at ? t("session.distilled") : t("session.notDistilled")}</span>
     </div>
     ${detail.workspace ? `<p class="quiet">${escapeHtml(detail.workspace)}</p>` : ""}
     ${detail.session.content_captured ? distillControls(detail.session.session_id) : ""}
-    <div class="events">${detail.events.map(eventBlock).join("") || `<p class="quiet">No event bodies retained.</p>`}</div>
+    <div class="events">${detail.events.map(eventBlock).join("") || `<p class="quiet">${t("session.noEvents")}</p>`}</div>
   `;
-  showDetailPeek("Source session", { kind: "session", id: sessionId }, options);
+  showDetailPeek(t("detail.sourceSession"), { kind: "session", id: sessionId }, options);
   const distillButton = document.querySelector("#distill-button");
   if (distillButton) distillButton.addEventListener("click", distillSelected);
 }
 
 async function openPage(path, options = {}) {
-  const detail = await api(`/api/page?path=${encodeURIComponent(path)}`);
+  const locale = requestedPageLocale(path);
+  const detail = await api(`/api/page?path=${encodeURIComponent(path)}&locale=${locale}`);
   detailPeekContent.innerHTML = `
     <p class="eyebrow">${escapeHtml(categoryTitle(detail.category))}</p>
     <h2 id="detail-peek-title">${escapeHtml(detail.title)}</h2>
     <div class="detail-meta">
       <span>${escapeHtml(detail.path)}</span>
-      <span>${detail.backlinks.length} backlinks</span>
+      <span>${t("wiki.backlinks", { count: detail.backlinks.length })}</span>
     </div>
+    ${translationControls(detail, path)}
     <article class="markdown">${detail.html}</article>
     ${detail.backlinks.length ? `
       <div class="section-block">
-        <p class="eyebrow">Linked from</p>
+        <p class="eyebrow">${t("wiki.linkedFrom")}</p>
         ${detail.backlinks.map(pageRow).join("")}
       </div>` : ""}
   `;
-  showDetailPeek("Wiki page", { kind: "page", id: path }, options);
+  showDetailPeek(t("wiki.page"), { kind: "page", id: path }, options);
   bindRows(detailPeekContent);
   bindWikiLinks();
+  bindPageLanguageControl(path);
+}
+
+function requestedPageLocale(path) {
+  return state.pageLocaleOverrides[path] || state.locale;
+}
+
+function translationControls(detail, path) {
+  const requestedName = localeName(detail.requested_locale, state.locale);
+  const notices = {
+    missing: t("wiki.translationMissing", { language: requestedName }),
+    invalid: t("wiki.translationInvalid", { language: requestedName }),
+    stale: t("wiki.translationStale"),
+  };
+  const notice = notices[detail.translation_status];
+  let target = null;
+  let label = null;
+  if (detail.resolved_locale !== detail.original_locale) {
+    target = detail.original_locale;
+    label = t("action.original");
+  } else if (
+    state.locale !== detail.original_locale
+    && requestedPageLocale(path) === detail.original_locale
+  ) {
+    target = state.locale;
+    label = t("action.translation", {
+      language: localeName(state.locale, state.locale),
+    });
+  }
+  if (!notice && !target) return "";
+  return `
+    <div class="translation-state ${detail.translation_status === "stale" ? "is-stale" : ""}">
+      ${notice ? `<span>${escapeHtml(notice)}</span>` : "<span></span>"}
+      ${target ? `<button type="button" data-page-locale="${target}">${escapeHtml(label)}</button>` : ""}
+    </div>`;
+}
+
+function bindPageLanguageControl(path) {
+  const button = detailPeekContent.querySelector("[data-page-locale]");
+  if (!button) return;
+  button.addEventListener("click", () => {
+    const locale = button.dataset.pageLocale;
+    if (locale === state.locale) delete state.pageLocaleOverrides[path];
+    else state.pageLocaleOverrides[path] = locale;
+    const route = renderedDetailPeekRoute;
+    if (route?.kind === "project") openProject(path, { fromHistory: true });
+    else openPage(path, { fromHistory: true });
+  });
 }
 
 function bindActivityRows() {
@@ -1291,25 +1429,25 @@ function openScheduledActivity(activityId, options = {}) {
     <p class="eyebrow">${escapeHtml(activityTaskLabel(run.task))}</p>
     <h2 id="detail-peek-title">${escapeHtml(activityStatusLabel(run.status))}</h2>
     <div class="detail-meta">
-      <span>Started ${escapeHtml(formatMoment(run.started_at))}</span>
-      <span>${run.finished_at ? `Ended ${escapeHtml(formatMoment(run.finished_at))}` : "In progress"}</span>
+      <span>${t("activity.started")} ${escapeHtml(formatMoment(run.started_at))}</span>
+      <span>${run.finished_at ? t("activity.ended", { time: escapeHtml(formatMoment(run.finished_at)) }) : t("activity.inProgress")}</span>
       <span>${escapeHtml(durationBetween(run.started_at, finished))}</span>
     </div>
     <div class="activity-timeline">
-      ${timelineStep("Started", run.started_at, true)}
+      ${timelineStep(t("activity.started"), run.started_at, true)}
       ${timelineStep(run.summary, run.finished_at || "Now", run.status !== "failed", run.status === "running")}
       ${run.finished_at ? timelineStep(activityStatusLabel(run.status), run.finished_at, run.status === "succeeded") : ""}
     </div>
     <section class="activity-log">
       <div class="activity-log-heading">
-        <p class="eyebrow">Recent log</p>
-        <span>${run.log_lines.length} lines</span>
+        <p class="eyebrow">${t("section.recentLog")}</p>
+        <span>${t("count.lines", { count: run.log_lines.length })}</span>
       </div>
-      <pre data-live-log tabindex="0" aria-label="Recent activity log">${escapeHtml(run.log_lines.join("\n") || "Waiting for the first log line...")}</pre>
+      <pre data-live-log tabindex="0" aria-label="${t("section.recentLog")}">${escapeHtml(run.log_lines.join("\n") || t("activity.waitingLog"))}</pre>
     </section>
   `;
   showDetailPeek(
-    "Scheduled activity",
+    t("detail.scheduledActivity"),
     { kind: "activity", id: activityId },
     options,
   );
@@ -1356,13 +1494,13 @@ function openReceipt(runId, type, options = {}) {
       <span>${escapeHtml(durationBetween(receipt.started_at, receipt.finished_at))}</span>
     </div>
     <div class="activity-timeline">
-      ${timelineStep("Started", receipt.started_at, true)}
+      ${timelineStep(t("activity.started"), receipt.started_at, true)}
       ${timelineStep(activityStatusLabel(receipt.status), receipt.finished_at, receipt.status === "succeeded")}
     </div>
     ${distillOutcomeDetails(receipt)}
   `;
   showDetailPeek(
-    "Run receipt",
+    t("detail.runReceipt"),
     { kind: "receipt", id: runId, type },
     options,
   );
@@ -1373,8 +1511,8 @@ function distillOutcomeDetails(receipt) {
   return `
     <div class="detail-section">
       <div class="section-heading">
-        <p class="eyebrow">Session outcomes</p>
-        <span>${receipt.session_outcomes.length} reviewed</span>
+        <p class="eyebrow">${t("section.sessionOutcomes")}</p>
+        <span>${t("count.reviewed", { count: receipt.session_outcomes.length })}</span>
       </div>
       <div class="record-list">
         ${receipt.session_outcomes.map((outcome) => `
@@ -1415,19 +1553,19 @@ async function search(event) {
   workspace.innerHTML = `
     <header class="view-header">
       <div>
-        <p class="eyebrow">Search</p>
+        <p class="eyebrow">${t("search.resultsEyebrow")}</p>
         <h1>${escapeHtml(query)}</h1>
       </div>
-      <p class="quiet">${results.length} result${results.length === 1 ? "" : "s"} across retained evidence and durable Wiki pages.</p>
+      <p class="quiet">${t("count.results", { count: results.length })}</p>
     </header>
-    <div class="record-list">${results.map(searchRow).join("") || emptyRow("No matching records.")}</div>
+    <div class="record-list">${results.map(searchRow).join("") || emptyRow(t("empty.search"))}</div>
   `;
   bindRows();
 }
 
 async function syncTranscripts() {
   syncButton.classList.add("is-busy");
-  syncButton.textContent = "Syncing…";
+  syncButton.textContent = t("sync.running");
   try {
     const receipt = await api("/api/sync", {
       method: "POST",
@@ -1436,27 +1574,27 @@ async function syncTranscripts() {
     });
     await refreshData();
     render();
-    showToast(`${receipt.events_added} new events retained.`);
+    showToast(t("sync.retained", { count: receipt.events_added }));
   } catch (error) {
     showToast(error.message);
   } finally {
     syncButton.classList.remove("is-busy");
-    syncButton.textContent = "Sync transcripts";
+    syncButton.textContent = t("action.sync");
   }
 }
 
 function openBuildWiki(options = {}) {
   detailPeekContent.innerHTML = `
-    <p class="eyebrow">Durable knowledge</p>
-    <h2 id="detail-peek-title">Build the Wiki</h2>
+    <p class="eyebrow">${t("build.eyebrow")}</p>
+    <h2 id="detail-peek-title">${t("build.title")}</h2>
     <div class="detail-meta">
-      <span>${state.overview.pending_distill_count} sessions waiting</span>
-      <span>${state.projects.length} project hubs</span>
+      <span>${t("build.waiting", { count: state.overview.pending_distill_count })}</span>
+      <span>${t("build.projectHubs", { count: state.projects.length })}</span>
     </div>
-    <p class="quiet">The next bounded batch will be merged into canonical topic pages. Existing topics are updated instead of duplicated.</p>
+    <p class="quiet">${t("build.description")}</p>
     ${buildWikiControls()}
   `;
-  showDetailPeek("Wiki workflow", { kind: "build", id: "pending" }, options);
+  showDetailPeek(t("detail.wikiWorkflow"), { kind: "build", id: "pending" }, options);
   const button = document.querySelector("#build-pending-button");
   button.addEventListener("click", distillPending);
 }
@@ -1468,11 +1606,11 @@ async function distillPending() {
   const contentAccess = document.querySelector("#build-access").value;
   const limit = Number(document.querySelector("#build-limit").value);
   if (!contentAccess) {
-    showToast("Choose what session content the curator may read.");
+    showToast(t("build.choosePermission"));
     return;
   }
   button.classList.add("is-busy");
-  button.textContent = "Building topic pages…";
+  button.textContent = t("build.running");
   try {
     const receipt = await api("/api/distill/pending", {
       method: "POST",
@@ -1491,11 +1629,11 @@ async function distillPending() {
     });
     renderProjects();
     openBuildWiki();
-    showToast(`${receipt.changed_files.length} topic pages changed.`);
+    showToast(t("build.changed", { count: receipt.changed_files.length }));
   } catch (error) {
     showToast(error.message);
     button.classList.remove("is-busy");
-    button.textContent = "Build next batch";
+    button.textContent = t("control.buildNext");
   }
 }
 
@@ -1505,7 +1643,7 @@ async function distillSelected() {
   const model = document.querySelector("#distill-model").value.trim() || null;
   const contentAccess = document.querySelector("#distill-access").value;
   button.classList.add("is-busy");
-  button.textContent = "Distilling…";
+  button.textContent = t("distill.running");
   try {
     const receipt = await api("/api/distill", {
       method: "POST",
@@ -1518,12 +1656,12 @@ async function distillSelected() {
       }),
     });
     await refreshData();
-    showToast(`${receipt.changed_files.length} durable pages changed.`);
+    showToast(t("distill.changed", { count: receipt.changed_files.length }));
     await openSession(button.dataset.session);
   } catch (error) {
     showToast(error.message);
     button.classList.remove("is-busy");
-    button.textContent = "Distill selected session";
+    button.textContent = t("distill.selected");
   }
 }
 
@@ -1569,7 +1707,7 @@ function sessionRow(session) {
     <button class="record-row" type="button" data-session="${escapeHtml(session.session_id)}">
       <span>
         <span class="record-title">${escapeHtml(session.title)}</span>
-        <span class="record-meta">${escapeHtml(session.provider)} · ${session.event_count} events</span>
+        <span class="record-meta">${escapeHtml(session.provider)} · ${t("count.events", { count: session.event_count })}</span>
       </span>
       <span class="record-side">${relativeTime(session.modified_at)}</span>
     </button>`;
@@ -1579,32 +1717,38 @@ function pageRow(page) {
   return `
     <button class="record-row" type="button" data-page="${escapeHtml(page.path)}">
       <span>
-        <span class="record-title">${escapeHtml(page.title)}</span>
+        <span class="record-title">${escapeHtml(pageLabel(page, state.locale))}</span>
         <span class="record-meta">${escapeHtml(categoryTitle(page.category))}${page.tags.length ? ` · ${escapeHtml(page.tags.join(", "))}` : ""}</span>
       </span>
-      <span class="record-side">${page.backlink_count} backlinks</span>
+      <span class="record-side">${t("wiki.backlinks", { count: page.backlink_count })}</span>
     </button>`;
 }
 
 function projectRow(project) {
+  const page = state.pages.find((item) => item.path === project.path);
+  const title = page ? pageLabel(page, state.locale) : project.title;
   return `
     <button class="record-row project-row" type="button" data-project="${escapeHtml(project.path)}">
       <span>
-        <span class="record-title">${escapeHtml(project.title)}</span>
-        <span class="record-meta">${project.topic_count} topics · ${project.source_session_ids.length} source sessions</span>
+        <span class="record-title">${escapeHtml(title)}</span>
+        <span class="record-meta">${t("count.topics", { count: project.topic_count })} · ${t("count.sources", { count: project.source_session_ids.length })}</span>
       </span>
-      <span class="record-side">Open project →</span>
+      <span class="record-side">${t("action.openProject")}</span>
     </button>`;
 }
 
 function searchRow(result) {
+  const page = result.kind === "wiki"
+    ? state.pages.find((item) => item.path === result.identity)
+    : null;
+  const title = page ? pageLabel(page, state.locale) : result.title;
   const attribute = result.kind === "session"
     ? `data-session="${escapeHtml(result.identity)}"`
     : `data-page="${escapeHtml(result.identity)}"`;
   return `
     <button class="record-row" type="button" ${attribute}>
       <span>
-        <span class="record-title">${escapeHtml(result.title)}</span>
+        <span class="record-title">${escapeHtml(title)}</span>
         <span class="record-meta">${escapeHtml(result.excerpt || result.kind)}</span>
       </span>
       <span class="record-side">${escapeHtml(result.kind)}</span>
@@ -1622,19 +1766,19 @@ function eventBlock(event) {
 function distillControls(sessionId) {
   return `
     <div class="distill-controls">
-      <select id="distill-runtime" aria-label="Curator runtime">
+      <select id="distill-runtime" aria-label="${t("control.runtime")}">
         <option value="ollama">Ollama · local</option>
         <option value="codex">Codex · remote</option>
         <option value="claude">Claude · remote</option>
       </select>
-      <input id="distill-model" placeholder="Model (required for Ollama)" aria-label="Model">
-      <select id="distill-access" aria-label="Content access">
-        <option value="metadata-only">Metadata only</option>
-        <option value="selected-local">Selected content · local only</option>
-        <option value="selected-remote">Selected content · remote</option>
+      <input id="distill-model" placeholder="${t("control.modelOllama")}" aria-label="${t("control.model")}">
+      <select id="distill-access" aria-label="${t("control.contentPermission")}">
+        <option value="metadata-only">${t("control.metadataOnly")}</option>
+        <option value="selected-local">${t("control.selectedLocal")}</option>
+        <option value="selected-remote">${t("control.selectedRemote")}</option>
       </select>
       <button id="distill-button" class="primary-action" type="button" data-session="${escapeHtml(sessionId)}">
-        Distill selected session
+        ${t("distill.selected")}
       </button>
     </div>`;
 }
@@ -1644,36 +1788,36 @@ function buildWikiControls() {
   return `
     <div class="distill-controls build-wiki-controls">
       <label>
-        <span>Runtime</span>
-        <select id="build-runtime" aria-label="Curator runtime">
+        <span>${t("control.runtime")}</span>
+        <select id="build-runtime" aria-label="${t("control.runtime")}">
           <option value="codex">Codex · remote</option>
           <option value="ollama">Ollama · local</option>
           <option value="claude">Claude · remote</option>
         </select>
       </label>
       <label>
-        <span>Batch size</span>
-        <select id="build-limit" aria-label="Pending session batch size">
-          <option value="5">5 sessions</option>
-          <option value="10" selected>10 sessions</option>
-          <option value="20">20 sessions</option>
+        <span>${t("control.batchSize")}</span>
+        <select id="build-limit" aria-label="${t("control.batchSize")}">
+          <option value="5">${t("control.sessions", { count: 5 })}</option>
+          <option value="10" selected>${t("control.sessions", { count: 10 })}</option>
+          <option value="20">${t("control.sessions", { count: 20 })}</option>
         </select>
       </label>
       <label class="control-wide">
-        <span>Model</span>
-        <input id="build-model" placeholder="Required for Ollama" aria-label="Model">
+        <span>${t("control.model")}</span>
+        <input id="build-model" placeholder="${t("control.modelOllama")}" aria-label="${t("control.model")}">
       </label>
       <label class="control-wide">
-        <span>Content permission</span>
-        <select id="build-access" aria-label="Content access">
-          <option value="" selected disabled>Choose permission…</option>
-          <option value="metadata-only">Metadata only</option>
-          <option value="selected-local">Selected content · local only</option>
-          <option value="selected-remote">Selected content · remote</option>
+        <span>${t("control.contentPermission")}</span>
+        <select id="build-access" aria-label="${t("control.contentPermission")}">
+          <option value="" selected disabled>${t("control.choosePermission")}</option>
+          <option value="metadata-only">${t("control.metadataOnly")}</option>
+          <option value="selected-local">${t("control.selectedLocal")}</option>
+          <option value="selected-remote">${t("control.selectedRemote")}</option>
         </select>
       </label>
       <button id="build-pending-button" class="primary-action" type="button" ${disabled}>
-        ${disabled ? "Nothing waiting" : "Build next batch"}
+        ${disabled ? t("control.nothingWaiting") : t("control.buildNext")}
       </button>
     </div>`;
 }
@@ -1711,34 +1855,34 @@ function timelineStep(label, moment, completed, current = false) {
       <span class="timeline-marker" aria-hidden="true"></span>
       <span>
         <strong>${escapeHtml(label)}</strong>
-        <small>${moment === "Now" ? "Now" : escapeHtml(formatMoment(moment))}</small>
+        <small>${moment === "Now" ? t("activity.now") : escapeHtml(formatMoment(moment))}</small>
       </span>
     </div>`;
 }
 
 function activityTaskLabel(value) {
   const labels = {
-    sync: "Transcript sync",
-    "auto-distill": "Wiki distillation",
-    distill: "Wiki distillation",
+    sync: t("activity.sync"),
+    "auto-distill": t("activity.distill"),
+    distill: t("activity.distill"),
   };
   return labels[value] || value;
 }
 
 function activityStatusLabel(value) {
   const labels = {
-    running: "Running",
-    succeeded: "Completed",
-    skipped: "Skipped",
-    failed: "Failed",
-    skipped_locked: "Skipped",
+    running: t("activity.running"),
+    succeeded: t("activity.succeeded"),
+    skipped: t("activity.skipped"),
+    failed: t("activity.failed"),
+    skipped_locked: t("activity.skipped"),
   };
   return labels[value] || value;
 }
 
 function formatMoment(value) {
-  if (!value) return "Not finished";
-  return new Intl.DateTimeFormat(undefined, {
+  if (!value) return t("time.notFinished");
+  return new Intl.DateTimeFormat(state.locale === "ko" ? "ko-KR" : "en", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -1748,8 +1892,8 @@ function formatMoment(value) {
 }
 
 function formatScheduleMoment(value) {
-  if (!value) return "Not scheduled";
-  return new Intl.DateTimeFormat(undefined, {
+  if (!value) return t("time.notScheduled");
+  return new Intl.DateTimeFormat(state.locale === "ko" ? "ko-KR" : "en", {
     weekday: "short",
     hour: "2-digit",
     minute: "2-digit",
@@ -1757,7 +1901,7 @@ function formatScheduleMoment(value) {
 }
 
 function durationBetween(start, finish) {
-  if (!start || !finish) return "Duration unavailable";
+  if (!start || !finish) return t("time.durationUnavailable");
   const seconds = Math.max(
     0,
     Math.round((new Date(finish) - new Date(start)) / 1000),
@@ -1772,22 +1916,13 @@ function emptyRow(message) {
 }
 
 function categoryTitle(value) {
-  const labels = {
-    projects: "Projects",
-    decisions: "Decisions",
-    problems: "Problems",
-    procedures: "Procedures",
-    systems: "Systems",
-    unfinished: "Unfinished work",
-    imports: "Imported Almanacs",
-    "agent-sessions": "Agent sessions",
-    home: "Agent Work Memory",
-  };
-  return labels[value] || value;
+  const key = `category.${value}`;
+  const label = t(key);
+  return label === key ? value : label;
 }
 
 function relativeTime(value) {
-  if (!value) return "never";
+  if (!value) return t("time.never");
   const seconds = Math.round((new Date(value).getTime() - Date.now()) / 1000);
   const units = [
     ["year", 31536000],
@@ -1796,11 +1931,14 @@ function relativeTime(value) {
     ["hour", 3600],
     ["minute", 60],
   ];
-  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  const formatter = new Intl.RelativeTimeFormat(
+    state.locale === "ko" ? "ko-KR" : "en",
+    { numeric: "auto" },
+  );
   for (const [unit, size] of units) {
     if (Math.abs(seconds) >= size) return formatter.format(Math.round(seconds / size), unit);
   }
-  return "just now";
+  return t("time.justNow");
 }
 
 function showToast(message) {

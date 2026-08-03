@@ -8,10 +8,10 @@ from markdown_it import MarkdownIt
 from agentworkmemory.services.activity.models import ActivityTask
 from agentworkmemory.services.auto_distillation.service import AutoDistillationService
 from agentworkmemory.services.automation.service import AutomationService
-from agentworkmemory.services.frontmatter import split_frontmatter
 from agentworkmemory.services.sessions.models import AgentSession
 from agentworkmemory.services.sessions.service import SessionsService
 from agentworkmemory.services.synchronization.service import SynchronizationService
+from agentworkmemory.services.translations import Locale, TranslationService
 from agentworkmemory.services.vault.service import CATALOG_DIRECTORIES, VaultService
 from agentworkmemory.services.viewer.models import (
     ViewerEvent,
@@ -49,6 +49,7 @@ class ViewerService:
         synchronization: SynchronizationService,
         automation: AutomationService,
         auto_distillation: AutoDistillationService,
+        translations: TranslationService,
     ):
         self.sessions_service = sessions
         self.vault = vault
@@ -56,6 +57,7 @@ class ViewerService:
         self.synchronization = synchronization
         self.automation = automation
         self.auto_distillation = auto_distillation
+        self.translations = translations
 
     def overview(self) -> ViewerOverview:
         sessions = self.sessions_service.list()
@@ -140,6 +142,7 @@ class ViewerService:
                 label=graph_label(page),
                 short_title_ko=page.short_title_ko,
                 short_title_en=page.short_title_en,
+                original_locale=page.original_locale,
                 category=page.category,
                 tags=page.tags,
                 source_count=len(page.source_session_ids),
@@ -157,26 +160,27 @@ class ViewerService:
         )
         return ViewerGraph(nodes=nodes, edges=edges)
 
-    def page(self, value: str) -> ViewerPageDetail:
+    def page(
+        self,
+        value: str,
+        locale: Locale | None = None,
+    ) -> ViewerPageDetail:
         relative = safe_viewer_page_path(value)
-        root = self.vault.require_path()
-        target = (root / relative).resolve()
-        target.relative_to(root.resolve())
-        if target.is_symlink() or not target.is_file():
-            raise KeyError(f"unknown Wiki page: {relative}")
-        raw = target.read_text(encoding="utf-8")
-        _, body = split_frontmatter(raw)
+        representation = self.translations.resolve(relative, locale)
         pages = self.wiki.pages()
         known = {page.path: page for page in pages}
         page = known.get(relative)
-        title = page.title if page is not None else markdown_title(relative, body)
         category = page.category if page is not None else page_category(relative)
         backlinks = wiki_backlinks(pages).get(relative, ())
         return ViewerPageDetail(
             path=relative,
-            title=title,
+            title=representation.title,
             category=category,
-            html=render_markdown(body),
+            html=render_markdown(representation.body),
+            requested_locale=representation.requested_locale,
+            resolved_locale=representation.resolved_locale,
+            original_locale=representation.original_locale,
+            translation_status=representation.status,
             backlinks=tuple(viewer_page(item, 0) for item in backlinks),
         )
 
@@ -202,7 +206,11 @@ class ViewerService:
             )
         return tuple(projects)
 
-    def project(self, value: str) -> ViewerProjectDetail:
+    def project(
+        self,
+        value: str,
+        locale: Locale | None = None,
+    ) -> ViewerProjectDetail:
         relative = safe_viewer_page_path(value)
         pages = self.wiki.pages()
         project = next(
@@ -226,7 +234,7 @@ class ViewerService:
             if session_id in sessions_by_id
         )
         return ViewerProjectDetail(
-            page=self.page(relative.as_posix()),
+            page=self.page(relative.as_posix(), locale),
             topics=tuple(viewer_page(topic, 0) for topic in topics),
             sessions=sessions,
         )
@@ -292,6 +300,9 @@ def viewer_page(page: WikiPage, backlink_count: int) -> ViewerPage:
     return ViewerPage(
         path=page.path,
         title=page.title,
+        short_title_ko=page.short_title_ko,
+        short_title_en=page.short_title_en,
+        original_locale=page.original_locale,
         category=page.category,
         tags=page.tags,
         source_session_ids=page.source_session_ids,
@@ -306,13 +317,6 @@ def graph_label(page: WikiPage) -> str:
         else (page.short_title_en, page.short_title_ko)
     )
     return next((title for title in localized if title), page.title)
-
-
-def markdown_title(path: Path, body: str) -> str:
-    for line in body.splitlines():
-        if line.startswith("# ") and line[2:].strip():
-            return line[2:].strip()
-    return path.stem.replace("-", " ").replace("_", " ").title()
 
 
 def page_category(path: Path) -> str:

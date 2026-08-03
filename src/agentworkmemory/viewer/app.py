@@ -17,6 +17,7 @@ from agentworkmemory.services.distillation.outcomes import (
     summarize_session_outcomes,
 )
 from agentworkmemory.services.sessions.models import LOCAL_TRANSCRIPT_PROVIDERS
+from agentworkmemory.services.translations import Locale
 from agentworkmemory.workflows.distill import DistillSessions
 from agentworkmemory.workflows.distill.coordination import (
     DistillationAlreadyRunning,
@@ -27,6 +28,7 @@ from agentworkmemory.workflows.sync import SyncAgentRecords
 ASSET_TYPES = {
     "app.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
+    "i18n.js": "text/javascript; charset=utf-8",
     "cytoscape.min.js": "text/javascript; charset=utf-8",
 }
 
@@ -121,16 +123,22 @@ def create_viewer_app(memory: AgentWorkMemory) -> FastAPI:
         ]
 
     @server.get("/api/project")
-    def project(path: str = Query(min_length=1)) -> dict[str, object]:
+    def project(
+        path: str = Query(min_length=1),
+        locale: Locale | None = None,
+    ) -> dict[str, object]:
         try:
-            return memory.viewer.project(path).model_dump(mode="json")
+            return memory.viewer.project(path, locale).model_dump(mode="json")
         except (KeyError, OSError, UnicodeError, ValueError) as error:
             raise HTTPException(status_code=404, detail="Project not found") from error
 
     @server.get("/api/page")
-    def page(path: str = Query(min_length=1)) -> dict[str, object]:
+    def page(
+        path: str = Query(min_length=1),
+        locale: Locale | None = None,
+    ) -> dict[str, object]:
         try:
-            return memory.viewer.page(path).model_dump(mode="json")
+            return memory.viewer.page(path, locale).model_dump(mode="json")
         except (KeyError, OSError, UnicodeError, ValueError) as error:
             raise HTTPException(status_code=404, detail="Page not found") from error
 

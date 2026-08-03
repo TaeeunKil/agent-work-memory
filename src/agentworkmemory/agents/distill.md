@@ -43,6 +43,10 @@ short_title_ko: 간결한 한국어 제목
 short_title_en: Concise English title
 ```
 
+Every changed durable page also needs `language: ko` or `language: en` in its
+YAML frontmatter. This identifies the language of the canonical body, not the
+languages available as derived translations.
+
 Make these semantic labels rather than mechanically truncated H1 text. Keep
 Korean labels to about 24 characters and English labels to about six words,
 preserve product names and acronyms, use one line without a trailing period,

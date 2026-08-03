@@ -52,6 +52,8 @@ def distill_prompt(
         "Graph title contract:",
         "- Every changed durable page must define both short_title_ko and",
         "  short_title_en in YAML frontmatter.",
+        "- Every changed durable page must define language as ko or en for",
+        "  the canonical body.",
         "- Write semantic labels, not mechanically truncated H1 text.",
         "- Keep Korean labels concise (about 24 characters) and English labels",
         "  concise (about 6 words), preserving product names and acronyms.",

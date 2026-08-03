@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from agentworkmemory.core import AgentWorkMemoryModel
+from agentworkmemory.services.translations.models import Locale
 
 
 class WikiPage(AgentWorkMemoryModel):
@@ -9,6 +10,7 @@ class WikiPage(AgentWorkMemoryModel):
     category: str
     short_title_ko: str | None = None
     short_title_en: str | None = None
+    original_locale: Locale = Locale.EN
     tags: tuple[str, ...] = ()
     source_session_ids: tuple[str, ...] = ()
     outgoing_links: tuple[Path, ...] = ()

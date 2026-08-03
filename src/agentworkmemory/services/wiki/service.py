@@ -7,6 +7,7 @@ import yaml
 from agentworkmemory.services.frontmatter import split_frontmatter
 from agentworkmemory.services.sessions.models import AgentSession
 from agentworkmemory.services.sessions.service import SessionsService
+from agentworkmemory.services.translations.service import page_locale
 from agentworkmemory.services.vault.service import CATALOG_DIRECTORIES, VaultService
 from agentworkmemory.services.wiki.models import WikiPage, WikiPageLink
 
@@ -94,6 +95,7 @@ def read_wiki_page(root: Path, path: Path, category: str) -> WikiPage:
         category=category,
         short_title_ko=optional_string(metadata.get("short_title_ko")),
         short_title_en=optional_string(metadata.get("short_title_en")),
+        original_locale=page_locale(metadata.get("language"), title, body),
         tags=tags,
         source_session_ids=tuple(dict.fromkeys(source_session_ids)),
         outgoing_links=outgoing,

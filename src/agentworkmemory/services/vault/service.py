@@ -24,6 +24,8 @@ VAULT_DIRECTORIES = (
     "systems",
     "unfinished",
     "imports/repository-almanacs",
+    "translations/ko",
+    "translations/en",
 )
 DURABLE_DIRECTORIES = frozenset(
     {

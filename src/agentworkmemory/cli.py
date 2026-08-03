@@ -22,6 +22,7 @@ from agentworkmemory.services.sessions.models import (
     SSH_REMOTE_TRANSCRIPT_PROVIDERS,
 )
 from agentworkmemory.services.synchronization.models import SyncReceipt, SyncStatus
+from agentworkmemory.services.translations import Locale
 from agentworkmemory.services.vault_repository.service import DEFAULT_COMMIT_MESSAGE
 from agentworkmemory.settings import load_config
 from agentworkmemory.workflows.auto_distill import AutoDistillRunState
@@ -31,6 +32,7 @@ from agentworkmemory.workflows.import_legacy import ImportLegacyAlmanac
 from agentworkmemory.workflows.remote_sync import SyncRemoteRecords
 from agentworkmemory.workflows.setup import SetupAgentWorkMemory
 from agentworkmemory.workflows.sync import SyncAgentRecords
+from agentworkmemory.workflows.translate import TranslateWikiPages
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -289,6 +291,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow selected session event bodies to be sent to the runtime.",
     )
 
+    translate = commands.add_parser(
+        "translate",
+        help="Create derived Korean or English Wiki representations.",
+    )
+    translate.add_argument("paths", nargs="*", type=Path)
+    translate.add_argument(
+        "--pending",
+        action="store_true",
+        help="Select canonical pages whose requested translation is missing or stale.",
+    )
+    translate.add_argument(
+        "--limit",
+        type=int,
+        default=1,
+        help="Maximum pending pages to translate (default: 1, maximum: 20).",
+    )
+    translate.add_argument(
+        "--to",
+        dest="locale",
+        type=Locale,
+        choices=tuple(Locale),
+        required=True,
+    )
+    translate.add_argument("--using", dest="runtime", default="codex")
+    translate.add_argument("--model")
+    translation_access = translate.add_mutually_exclusive_group()
+    translation_access.add_argument(
+        "--allow-local-content",
+        action="store_true",
+        help="Allow selected Wiki bodies to be sent to a local runtime.",
+    )
+    translation_access.add_argument(
+        "--allow-remote-content",
+        action="store_true",
+        help="Allow selected Wiki bodies to be sent to the named runtime.",
+    )
+
     commands.add_parser("runtimes", help="Check available curator runtimes.")
 
     doctor = commands.add_parser("doctor", help="Check the local installation.")
@@ -395,6 +434,25 @@ def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
                 print(path.as_posix())
         else:
             print("No durable Wiki pages changed.")
+        return 0
+    if args.command == "translate":
+        app.vault.require_path()
+        paths = translation_paths(args, app)
+        if not paths:
+            print("No Wiki pages are waiting for that translation.")
+            return 0
+        changed = app.translate.run(
+            TranslateWikiPages(
+                paths=paths,
+                locale=args.locale,
+                runtime=args.runtime,
+                model=args.model,
+                content_access=distill_content_access(args),
+            )
+        )
+        print(f"Translated {len(changed)} Wiki page(s) to {args.locale.value}.")
+        for path in changed:
+            print(path.as_posix())
         return 0
     if args.command == "runtimes":
         for readiness in app.curators.readiness():
@@ -557,6 +615,20 @@ def distill_session_ids(
         session.session_id
         for session in app.sessions.pending_distillation(limit)
     )
+
+
+def translation_paths(
+    args: argparse.Namespace,
+    app: AgentWorkMemory,
+) -> tuple[Path, ...]:
+    explicit = tuple(args.paths)
+    if args.pending and explicit:
+        raise ValueError("--pending cannot be combined with Wiki paths")
+    if not args.pending:
+        if not explicit:
+            raise ValueError("translate requires Wiki paths or --pending")
+        return explicit
+    return app.translate.pending_paths(args.locale, args.limit)
 
 
 def sync_request(args: argparse.Namespace) -> SyncAgentRecords:

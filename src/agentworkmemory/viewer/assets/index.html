@@ -32,7 +32,7 @@
           </svg>
         </button>
 
-        <nav id="primary-navigation" class="primary-nav" aria-label="Primary">
+        <nav id="primary-navigation" class="primary-nav" aria-label="Primary navigation">
           <button class="nav-item is-active" data-view="overview" title="Today">
             <span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 18 18"><circle cx="9" cy="9" r="5"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2"/></svg></span>
             <span class="nav-label">Today</span>
@@ -59,9 +59,15 @@
           </button>
         </nav>
 
-        <div class="rail-status">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span id="rail-status">Local vault</span>
+        <div class="rail-footer">
+          <div class="language-switch" role="group" aria-label="Language">
+            <button type="button" data-locale="ko" aria-pressed="false">한국어</button>
+            <button type="button" data-locale="en" aria-pressed="true">EN</button>
+          </div>
+          <div class="rail-status">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="rail-status">Local vault</span>
+          </div>
         </div>
       </aside>
 
@@ -166,6 +172,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="/assets/cytoscape.min.js" defer></script>
-    <script src="/assets/app.js" defer></script>
+    <script type="module" src="/assets/app.js"></script>
   </body>
 </html>
