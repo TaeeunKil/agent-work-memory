@@ -14,7 +14,7 @@ class AutoDistillSettings(AgentWorkMemoryModel):
     content_access: ContentAccess
     installed_at: datetime | None = None
     expires_at: datetime
-    max_sessions_total: int = Field(ge=1, le=100)
+    max_sessions_total: int = Field(ge=1, le=1000)
     sessions_reserved: int = Field(default=0, ge=0)
 
     @field_validator("runtime")

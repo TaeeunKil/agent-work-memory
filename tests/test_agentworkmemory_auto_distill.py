@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from filelock import FileLock
+from pydantic import ValidationError
 
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import build_parser, dispatch, main
@@ -73,6 +74,31 @@ class FakeCurator:
             runtime=self.runtime,
             status=self.status,
             output_text="no durable changes",
+        )
+
+
+def test_auto_distill_settings_accept_a_large_bounded_backlog():
+    settings = AutoDistillSettings(
+        interval_minutes=10,
+        limit=1,
+        runtime="codex",
+        content_access=ContentAccess.SELECTED_REMOTE,
+        expires_at=datetime.now(UTC) + timedelta(days=30),
+        max_sessions_total=439,
+    )
+
+    assert settings.max_sessions_total == 439
+
+
+def test_auto_distill_settings_reject_an_effectively_unbounded_grant():
+    with pytest.raises(ValidationError):
+        AutoDistillSettings(
+            interval_minutes=10,
+            limit=1,
+            runtime="codex",
+            content_access=ContentAccess.SELECTED_REMOTE,
+            expires_at=datetime.now(UTC) + timedelta(days=30),
+            max_sessions_total=1001,
         )
 
 
