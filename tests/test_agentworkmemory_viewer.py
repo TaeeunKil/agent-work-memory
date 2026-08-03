@@ -563,6 +563,17 @@ def test_viewer_packages_offline_knowledge_graph_surface(tmp_path: Path):
     assert ".select-menu-popover" in stylesheet.text
     assert "flex: 0 0 8px" in stylesheet.text
     assert "body.rail-collapsed" in stylesheet.text
+    assert "body.rail-collapsed .brand-name" in stylesheet.text
+    assert 'class="brand-line brand-line-primary"' in index.text
+    assert 'class="brand-line brand-line-secondary"' in index.text
+    assert "clip-path: inset(0 100% 0 0)" in stylesheet.text
+    assert "scale(.92)" in stylesheet.text
+    assert "transform-origin: left center" in stylesheet.text
+    assert "white-space: nowrap" in stylesheet.text
+    collapsed_brand_rule = stylesheet.text.split(
+        "body.rail-collapsed .brand-name", maxsplit=1
+    )[1].split("}", maxsplit=1)[0]
+    assert "display: none" not in collapsed_brand_rule
     assert "https://" not in index.text
 
 

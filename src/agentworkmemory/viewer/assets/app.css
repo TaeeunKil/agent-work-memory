@@ -61,7 +61,9 @@ button {
 }
 
 .brand {
+  position: relative;
   display: flex;
+  min-height: 37px;
   align-items: flex-start;
   gap: 13px;
   color: inherit;
@@ -70,6 +72,35 @@ button {
   line-height: .94;
   letter-spacing: -.035em;
   text-decoration: none;
+}
+
+.brand-name {
+  position: absolute;
+  top: 1px;
+  left: 50px;
+  display: block;
+  width: 122px;
+  visibility: visible;
+  white-space: nowrap;
+  transition: visibility 0s linear;
+}
+
+.brand-line {
+  display: block;
+  width: max-content;
+  opacity: 1;
+  clip-path: inset(0 0 0 0);
+  transform: translateX(0) scale(1);
+  transform-origin: left center;
+  will-change: clip-path, opacity, transform;
+}
+
+.brand-line-primary {
+  transition: opacity 100ms ease 105ms, clip-path 220ms cubic-bezier(.2, .8, .2, 1) 70ms, transform 220ms cubic-bezier(.2, .8, .2, 1) 70ms;
+}
+
+.brand-line-secondary {
+  transition: opacity 100ms ease 135ms, clip-path 220ms cubic-bezier(.2, .8, .2, 1) 95ms, transform 220ms cubic-bezier(.2, .8, .2, 1) 95ms;
 }
 
 .brand-mark {
@@ -215,10 +246,21 @@ button {
     padding-left: 14px;
   }
 
-  body.rail-collapsed .brand-name,
   body.rail-collapsed .rail-status span:last-child,
   body.rail-collapsed .nav-label {
     display: none;
+  }
+
+  body.rail-collapsed .brand-name {
+    visibility: hidden;
+    transition: visibility 0s linear 170ms;
+  }
+
+  body.rail-collapsed .brand-line {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+    transform: translateX(-8px) scale(.92);
+    transition: opacity 60ms ease, clip-path 140ms cubic-bezier(.4, 0, 1, 1), transform 140ms cubic-bezier(.4, 0, 1, 1);
   }
 
   body.rail-collapsed .primary-nav {
