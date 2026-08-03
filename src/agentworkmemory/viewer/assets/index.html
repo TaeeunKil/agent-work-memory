@@ -91,18 +91,74 @@
         </footer>
       </main>
 
-      <aside id="inspector" class="inspector" aria-label="Selected item">
-        <button id="close-inspector" class="inspector-close" type="button">
-          Close
-        </button>
-        <div id="inspector-content" class="inspector-content">
-          <p class="eyebrow">Context</p>
-          <h2>Select a record</h2>
-          <p class="quiet">
-            Choose a session or Wiki page to inspect its evidence and links.
-          </p>
+    </div>
+
+    <div id="detail-peek" class="detail-peek" aria-hidden="true" inert>
+      <button
+        id="detail-peek-backdrop"
+        class="detail-peek-backdrop"
+        type="button"
+        aria-label="Close detail"
+        tabindex="-1"
+      ></button>
+      <section
+        id="detail-peek-dialog"
+        class="detail-peek-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="detail-peek-title"
+      >
+        <header class="detail-peek-chrome">
+          <span id="detail-peek-context">Detail</span>
+          <div class="detail-peek-actions">
+            <button
+              id="expand-detail-peek"
+              class="detail-peek-action"
+              type="button"
+              aria-label="Expand detail to full screen"
+              title="Expand to full screen"
+            >
+              <svg viewBox="0 0 18 18" aria-hidden="true">
+                <path d="M7 3H3v4M11 3h4v4M7 15H3v-4M11 15h4v-4" />
+              </svg>
+            </button>
+            <button
+              id="close-detail-peek"
+              class="detail-peek-action"
+              type="button"
+              aria-label="Close detail"
+              title="Close (Esc)"
+            >
+              <svg viewBox="0 0 18 18" aria-hidden="true">
+                <path d="m4 4 10 10M14 4 4 14" />
+              </svg>
+            </button>
+          </div>
+        </header>
+        <div class="detail-peek-body">
+          <nav
+            id="detail-peek-toc"
+            class="detail-peek-toc"
+            aria-label="On this page"
+            hidden
+          >
+            <button
+              id="detail-peek-toc-toggle"
+              class="detail-peek-toc-toggle"
+              type="button"
+              aria-controls="detail-peek-toc-list"
+              aria-expanded="true"
+            >
+              <span>On this page</span>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4 6 4 4 4-4" />
+              </svg>
+            </button>
+            <div id="detail-peek-toc-list" class="detail-peek-toc-list"></div>
+          </nav>
+          <div id="detail-peek-content" class="detail-peek-content"></div>
         </div>
-      </aside>
+      </section>
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

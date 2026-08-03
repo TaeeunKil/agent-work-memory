@@ -476,8 +476,8 @@ def test_viewer_live_activity_log_preserves_end_aware_scrolling(tmp_path: Path):
     assert stylesheet.status_code == 200
     assert "data-live-log" in javascript.text
     assert 'tabindex="0" aria-label="Recent activity log"' in javascript.text
-    assert "captureEndAwareScroll(activityInspector)" in javascript.text
-    assert "restoreEndAwareScroll(activityInspector, inspectorScroll)" in (
+    assert "captureEndAwareScroll(detailPeekContent)" in javascript.text
+    assert "restoreEndAwareScroll(detailPeekContent, detailPeekScroll)" in (
         javascript.text
     )
     assert "distanceFromEnd <= 24" in javascript.text
@@ -485,6 +485,44 @@ def test_viewer_live_activity_log_preserves_end_aware_scrolling(tmp_path: Path):
     assert "scrollbar-color: transparent transparent" in stylesheet.text
     assert ".activity-log pre:focus::-webkit-scrollbar-thumb" in stylesheet.text
     assert "background-color: rgba(242, 239, 231, .58)" in stylesheet.text
+
+
+def test_viewer_packages_accessible_detail_peek_surface(tmp_path: Path):
+    app, _ = viewer_fixture(tmp_path)
+    client = TestClient(create_viewer_app(app))
+
+    index = client.get("/")
+    javascript = client.get("/assets/app.js")
+    stylesheet = client.get("/assets/app.css")
+
+    assert index.status_code == 200
+    assert 'id="detail-peek"' in index.text
+    assert 'role="dialog"' in index.text
+    assert 'aria-modal="true"' in index.text
+    assert 'aria-labelledby="detail-peek-title"' in index.text
+    assert 'id="expand-detail-peek"' in index.text
+    assert 'id="close-detail-peek"' in index.text
+    assert 'id="detail-peek-toc"' in index.text
+    assert 'aria-label="On this page"' in index.text
+    assert 'aria-controls="detail-peek-toc-list"' in index.text
+    assert 'id="inspector"' not in index.text
+    assert "showDetailPeek" in javascript.text
+    assert 'id="detail-peek-title"' in javascript.text
+    assert "handleDetailPeekKeydown" in javascript.text
+    assert 'event.key === "Escape"' in javascript.text
+    assert "DETAIL_PEEK_HISTORY_KEY" in javascript.text
+    assert "detailPeekRestoreTarget.focus()" in javascript.text
+    assert '.markdown h2, .markdown h3' in javascript.text
+    assert "if (!heading.id) heading.id" in javascript.text
+    assert "button.title = headingText" in javascript.text
+    assert "scrollToDetailPeekHeading" in javascript.text
+    assert 'button.setAttribute("aria-current", "location")' in javascript.text
+    assert "body.detail-peek-expanded .detail-peek-dialog" in stylesheet.text
+    assert "body.has-detail-peek .detail-peek" in stylesheet.text
+    assert ".detail-peek-body.has-toc" in stylesheet.text
+    assert 'grid-template-areas: "content toc"' in stylesheet.text
+    assert ".detail-peek-toc-link.is-active" in stylesheet.text
+    assert "body.has-inspector" not in stylesheet.text
 
 
 def test_viewer_packages_offline_knowledge_graph_surface(tmp_path: Path):

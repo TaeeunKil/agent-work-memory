@@ -17,6 +17,7 @@ const state = {
 
 const GRAPH_POSITION_KEY = "awm.knowledge-graph.positions.v1";
 const RAIL_COLLAPSED_KEY = "awm.viewer.rail-collapsed.v1";
+const DETAIL_PEEK_HISTORY_KEY = "awmDetailPeek";
 const GRAPH_COLORS = {
   projects: "#e25832",
   decisions: "#d9a441",
@@ -30,10 +31,20 @@ const GRAPH_COLORS = {
 let knowledgeGraph = null;
 let graphResizeTimer = null;
 let activeSelectMenu = null;
+let detailPeekRestoreTarget = null;
+let renderedDetailPeekRoute = null;
+let detailPeekHeadings = [];
 
 const workspace = document.querySelector("#workspace");
-const activityInspector = document.querySelector("#inspector");
-const inspector = document.querySelector("#inspector-content");
+const detailPeek = document.querySelector("#detail-peek");
+const detailPeekDialog = document.querySelector("#detail-peek-dialog");
+const detailPeekBody = document.querySelector(".detail-peek-body");
+const detailPeekContent = document.querySelector("#detail-peek-content");
+const detailPeekContext = document.querySelector("#detail-peek-context");
+const expandDetailPeekButton = document.querySelector("#expand-detail-peek");
+const detailPeekToc = document.querySelector("#detail-peek-toc");
+const detailPeekTocList = document.querySelector("#detail-peek-toc-list");
+const detailPeekTocToggle = document.querySelector("#detail-peek-toc-toggle");
 const syncButton = document.querySelector("#sync-button");
 const buildWikiButton = document.querySelector("#build-wiki-button");
 const railToggle = document.querySelector("#rail-toggle");
@@ -45,7 +56,13 @@ document.querySelectorAll(".nav-item").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
 });
 
-document.querySelector("#close-inspector").addEventListener("click", closeInspector);
+document.querySelector("#close-detail-peek").addEventListener("click", closeDetailPeek);
+document.querySelector("#detail-peek-backdrop").addEventListener("click", closeDetailPeek);
+expandDetailPeekButton.addEventListener("click", toggleDetailPeekSize);
+detailPeekTocToggle.addEventListener("click", toggleDetailPeekToc);
+detailPeekContent.addEventListener("scroll", updateActiveDetailPeekHeading, {
+  passive: true,
+});
 document.querySelector("#search-form").addEventListener("submit", search);
 syncButton.addEventListener("click", syncTranscripts);
 buildWikiButton.addEventListener("click", openBuildWiki);
@@ -57,8 +74,17 @@ document.addEventListener("pointerdown", (event) => {
     activeSelectMenu.close(false);
   }
 });
-window.addEventListener("hashchange", openHashTarget);
-window.addEventListener("resize", () => queueGraphResize());
+document.addEventListener("keydown", handleDetailPeekKeydown);
+window.addEventListener("popstate", restoreDetailPeekHistory);
+window.addEventListener("hashchange", () => {
+  if (!window.history.state?.[DETAIL_PEEK_HISTORY_KEY]) {
+    openHashTarget({ fromHistory: true });
+  }
+});
+window.addEventListener("resize", () => {
+  queueGraphResize();
+  syncDetailPeekTocLayout();
+});
 
 boot();
 
@@ -70,7 +96,7 @@ async function boot() {
     await refreshSchedules();
     await refreshData();
     render();
-    openHashTarget();
+    openHashTarget({ fromHistory: true });
   } catch (error) {
     state.view = "activity";
     document.querySelectorAll(".nav-item").forEach((button) => {
@@ -915,54 +941,295 @@ function categoryGrid() {
   }).join("")}</div>`;
 }
 
-function bindRows() {
-  document.querySelectorAll("[data-session]").forEach((row) => {
+function bindRows(root = document) {
+  root.querySelectorAll("[data-session]").forEach((row) => {
     row.addEventListener("click", () => openSession(row.dataset.session));
   });
-  document.querySelectorAll("[data-page]").forEach((row) => {
+  root.querySelectorAll("[data-page]").forEach((row) => {
     row.addEventListener("click", () => openPage(row.dataset.page));
   });
-  document.querySelectorAll("[data-project]").forEach((row) => {
+  root.querySelectorAll("[data-project]").forEach((row) => {
     row.addEventListener("click", () => openProject(row.dataset.project));
   });
-  document.querySelectorAll("[data-category]").forEach((button) => {
+  root.querySelectorAll("[data-category]").forEach((button) => {
     button.addEventListener("click", () => renderKnowledge(button.dataset.category));
   });
 }
 
-async function openProject(path) {
+function showDetailPeek(context, route, { fromHistory = false } = {}) {
+  const wasOpen = document.body.classList.contains("has-detail-peek");
+  const isSameRenderedRoute = detailPeekRoutesMatch(
+    renderedDetailPeekRoute,
+    route,
+  );
+  if (!wasOpen) {
+    detailPeekRestoreTarget = document.activeElement;
+    document.body.classList.remove("detail-peek-expanded");
+    updateDetailPeekSizeControl();
+  }
+  if (!fromHistory && !detailPeekRouteMatches(route)) {
+    window.history.pushState(
+      { ...window.history.state, [DETAIL_PEEK_HISTORY_KEY]: route },
+      "",
+      detailPeekUrl(route),
+    );
+  }
+  detailPeekContext.textContent = context;
+  if (!isSameRenderedRoute) detailPeekContent.scrollTop = 0;
+  renderedDetailPeekRoute = route;
+  detailPeek.setAttribute("aria-hidden", "false");
+  detailPeek.inert = false;
+  document.body.classList.add("has-detail-peek");
+  configureDetailPeekToc();
+  if (!wasOpen) {
+    window.requestAnimationFrame(() => {
+      document.querySelector("#close-detail-peek").focus();
+    });
+  }
+}
+
+function detailPeekRouteMatches(route) {
+  const activeRoute = window.history.state?.[DETAIL_PEEK_HISTORY_KEY];
+  return detailPeekRoutesMatch(activeRoute, route);
+}
+
+function detailPeekRoutesMatch(left, right) {
+  return Boolean(
+    left
+    && right
+    && left.kind === right.kind
+    && left.id === right.id
+    && left.type === right.type,
+  );
+}
+
+function detailPeekUrl(route) {
+  if (route.kind === "page") {
+    return `#/wiki/${encodeURIComponent(route.id)}`;
+  }
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+function hideDetailPeek({ restoreFocus = true } = {}) {
+  document.body.classList.remove("has-detail-peek", "detail-peek-expanded");
+  detailPeek.setAttribute("aria-hidden", "true");
+  detailPeek.inert = true;
+  state.selectedActivityId = null;
+  renderedDetailPeekRoute = null;
+  detailPeekHeadings = [];
+  updateDetailPeekSizeControl();
+  if (restoreFocus && detailPeekRestoreTarget?.isConnected) {
+    detailPeekRestoreTarget.focus();
+  }
+  detailPeekRestoreTarget = null;
+}
+
+function closeDetailPeek() {
+  if (window.history.state?.[DETAIL_PEEK_HISTORY_KEY]) {
+    window.history.back();
+    return;
+  }
+  if (window.location.hash.startsWith("#/wiki/")) {
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}`,
+    );
+  }
+  hideDetailPeek();
+}
+
+function toggleDetailPeekSize() {
+  document.body.classList.toggle("detail-peek-expanded");
+  updateDetailPeekSizeControl();
+}
+
+function updateDetailPeekSizeControl() {
+  const isExpanded = document.body.classList.contains("detail-peek-expanded");
+  const label = isExpanded
+    ? "Return detail to preview size"
+    : "Expand detail to full screen";
+  expandDetailPeekButton.setAttribute("aria-label", label);
+  expandDetailPeekButton.title = isExpanded
+    ? "Return to preview"
+    : "Expand to full screen";
+  expandDetailPeekButton.setAttribute("aria-pressed", String(isExpanded));
+}
+
+function configureDetailPeekToc() {
+  detailPeekHeadings = [
+    ...detailPeekContent.querySelectorAll(".markdown h2, .markdown h3"),
+  ];
+  detailPeekTocList.innerHTML = "";
+  if (detailPeekHeadings.length < 2) {
+    detailPeekToc.hidden = true;
+    detailPeekBody.classList.remove("has-toc");
+    detailPeekToc.classList.remove("is-open");
+    return;
+  }
+  detailPeekHeadings.forEach((heading, index) => {
+    if (!heading.id) heading.id = `awm-detail-heading-${index + 1}`;
+    const headingText = heading.textContent.trim();
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `detail-peek-toc-link is-${heading.tagName.toLowerCase()}`;
+    button.dataset.tocTarget = heading.id;
+    button.textContent = headingText;
+    button.title = headingText;
+    button.addEventListener("click", () => scrollToDetailPeekHeading(heading));
+    detailPeekTocList.append(button);
+  });
+  detailPeekToc.hidden = false;
+  detailPeekBody.classList.add("has-toc");
+  syncDetailPeekTocLayout();
+  window.requestAnimationFrame(updateActiveDetailPeekHeading);
+}
+
+function toggleDetailPeekToc() {
+  setDetailPeekTocExpanded(!detailPeekToc.classList.contains("is-open"));
+}
+
+function syncDetailPeekTocLayout() {
+  if (detailPeekToc.hidden) return;
+  setDetailPeekTocExpanded(!window.matchMedia("(max-width: 980px)").matches);
+}
+
+function setDetailPeekTocExpanded(isExpanded) {
+  detailPeekToc.classList.toggle("is-open", isExpanded);
+  detailPeekTocToggle.setAttribute("aria-expanded", String(isExpanded));
+}
+
+function scrollToDetailPeekHeading(heading) {
+  heading.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth",
+    block: "start",
+  });
+  setActiveDetailPeekHeading(heading.id);
+  if (window.matchMedia("(max-width: 980px)").matches) {
+    setDetailPeekTocExpanded(false);
+  }
+}
+
+function updateActiveDetailPeekHeading() {
+  if (detailPeekToc.hidden || detailPeekHeadings.length === 0) return;
+  const readingLine = detailPeekContent.getBoundingClientRect().top + 120;
+  let activeHeading = detailPeekHeadings[0];
+  detailPeekHeadings.forEach((heading) => {
+    if (heading.getBoundingClientRect().top <= readingLine) {
+      activeHeading = heading;
+    }
+  });
+  setActiveDetailPeekHeading(activeHeading.id);
+}
+
+function setActiveDetailPeekHeading(headingId) {
+  detailPeekTocList.querySelectorAll("[data-toc-target]").forEach((button) => {
+    const isActive = button.dataset.tocTarget === headingId;
+    button.classList.toggle("is-active", isActive);
+    if (isActive) {
+      button.setAttribute("aria-current", "location");
+    } else {
+      button.removeAttribute("aria-current");
+    }
+  });
+}
+
+function handleDetailPeekKeydown(event) {
+  if (!document.body.classList.contains("has-detail-peek")) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeDetailPeek();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = [...detailPeekDialog.querySelectorAll(
+    "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+  )].filter((element) => element.getClientRects().length > 0);
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function restoreDetailPeekHistory() {
+  const route = window.history.state?.[DETAIL_PEEK_HISTORY_KEY];
+  if (route) {
+    openDetailPeekRoute(route, { fromHistory: true });
+    return;
+  }
+  if (window.location.hash.startsWith("#/wiki/")) {
+    openHashTarget({ fromHistory: true });
+    return;
+  }
+  hideDetailPeek();
+}
+
+function openDetailPeekRoute(route, options) {
+  const openings = {
+    activity: () => openScheduledActivity(route.id, options),
+    build: () => openBuildWiki(options),
+    page: () => openPage(route.id, options),
+    project: () => openProject(route.id, options),
+    receipt: () => openReceipt(route.id, route.type, options),
+    session: () => openSession(route.id, options),
+  };
+  const openRoute = openings[route.kind];
+  if (!openRoute) {
+    hideDetailPeek();
+    return;
+  }
+  Promise.resolve(openRoute()).catch((error) => showToast(error.message));
+}
+
+function bindWikiLinks() {
+  detailPeekContent.querySelectorAll("a[href^='#/wiki/']").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      const prefix = "#/wiki/";
+      const path = decodeURIComponent(link.getAttribute("href").slice(prefix.length));
+      openPage(path).catch((error) => showToast(error.message));
+    });
+  });
+}
+
+async function openProject(path, options = {}) {
   const detail = await api(`/api/project?path=${encodeURIComponent(path)}`);
-  document.body.classList.add("has-inspector");
-  inspector.innerHTML = `
+  detailPeekContent.innerHTML = `
     <p class="eyebrow">Project hub</p>
-    <h2>${escapeHtml(detail.page.title)}</h2>
-    <div class="inspector-meta">
+    <h2 id="detail-peek-title">${escapeHtml(detail.page.title)}</h2>
+    <div class="detail-meta">
       <span>${detail.topics.length} topic pages</span>
       <span>${detail.sessions.length} source sessions</span>
     </div>
     <article class="markdown">${detail.page.html}</article>
-    <section class="inspector-section">
+    <section class="detail-section">
       <p class="eyebrow">Topics</p>
       <div class="record-list">${detail.topics.map(pageRow).join("") || emptyRow("No linked topic pages yet.")}</div>
     </section>
-    <section class="inspector-section">
+    <section class="detail-section">
       <p class="eyebrow">Evidence</p>
       <div class="record-list">${detail.sessions.map(sessionRow).join("") || emptyRow("No source sessions cited yet.")}</div>
     </section>
   `;
-  bindRows();
-  inspector.querySelectorAll("a[href^='#/wiki/']").forEach((link) => {
-    link.addEventListener("click", openHashTarget);
-  });
+  showDetailPeek("Project hub", { kind: "project", id: path }, options);
+  bindRows(detailPeekContent);
+  bindWikiLinks();
 }
 
-async function openSession(sessionId) {
+async function openSession(sessionId, options = {}) {
   const detail = await api(`/api/sessions/${encodeURIComponent(sessionId)}`);
-  document.body.classList.add("has-inspector");
-  inspector.innerHTML = `
+  detailPeekContent.innerHTML = `
     <p class="eyebrow">${escapeHtml(detail.session.provider)} session</p>
-    <h2>${escapeHtml(detail.session.title)}</h2>
-    <div class="inspector-meta">
+    <h2 id="detail-peek-title">${escapeHtml(detail.session.title)}</h2>
+    <div class="detail-meta">
       <span>${detail.session.event_count} events</span>
       <span>${detail.session.content_captured ? "content retained" : "metadata only"}</span>
       <span>${detail.session.distilled_at ? "distilled" : "not distilled"}</span>
@@ -971,17 +1238,17 @@ async function openSession(sessionId) {
     ${detail.session.content_captured ? distillControls(detail.session.session_id) : ""}
     <div class="events">${detail.events.map(eventBlock).join("") || `<p class="quiet">No event bodies retained.</p>`}</div>
   `;
+  showDetailPeek("Source session", { kind: "session", id: sessionId }, options);
   const distillButton = document.querySelector("#distill-button");
   if (distillButton) distillButton.addEventListener("click", distillSelected);
 }
 
-async function openPage(path) {
+async function openPage(path, options = {}) {
   const detail = await api(`/api/page?path=${encodeURIComponent(path)}`);
-  document.body.classList.add("has-inspector");
-  inspector.innerHTML = `
+  detailPeekContent.innerHTML = `
     <p class="eyebrow">${escapeHtml(categoryTitle(detail.category))}</p>
-    <h2>${escapeHtml(detail.title)}</h2>
-    <div class="inspector-meta">
+    <h2 id="detail-peek-title">${escapeHtml(detail.title)}</h2>
+    <div class="detail-meta">
       <span>${escapeHtml(detail.path)}</span>
       <span>${detail.backlinks.length} backlinks</span>
     </div>
@@ -992,16 +1259,9 @@ async function openPage(path) {
         ${detail.backlinks.map(pageRow).join("")}
       </div>` : ""}
   `;
-  bindRows();
-  inspector.querySelectorAll("a[href^='#/wiki/']").forEach((link) => {
-    link.addEventListener("click", openHashTarget);
-  });
-}
-
-function closeInspector() {
-  document.body.classList.remove("has-inspector");
-  state.selectedActivityId = null;
-  queueGraphResize();
+  showDetailPeek("Wiki page", { kind: "page", id: path }, options);
+  bindRows(detailPeekContent);
+  bindWikiLinks();
 }
 
 function bindActivityRows() {
@@ -1015,23 +1275,22 @@ function bindActivityRows() {
   });
 }
 
-function openScheduledActivity(activityId) {
+function openScheduledActivity(activityId, options = {}) {
   const run = state.activity.find((item) => item.activity_id === activityId);
   if (!run) return;
   const isRefreshingSelection = state.selectedActivityId === activityId;
-  const inspectorScroll = isRefreshingSelection
-    ? captureEndAwareScroll(activityInspector)
+  const detailPeekScroll = isRefreshingSelection
+    ? captureEndAwareScroll(detailPeekContent)
     : null;
   const logScroll = isRefreshingSelection
-    ? captureEndAwareScroll(inspector.querySelector("[data-live-log]"))
+    ? captureEndAwareScroll(detailPeekContent.querySelector("[data-live-log]"))
     : null;
   state.selectedActivityId = activityId;
-  document.body.classList.add("has-inspector");
   const finished = run.finished_at || new Date().toISOString();
-  inspector.innerHTML = `
+  detailPeekContent.innerHTML = `
     <p class="eyebrow">${escapeHtml(activityTaskLabel(run.task))}</p>
-    <h2>${escapeHtml(activityStatusLabel(run.status))}</h2>
-    <div class="inspector-meta">
+    <h2 id="detail-peek-title">${escapeHtml(activityStatusLabel(run.status))}</h2>
+    <div class="detail-meta">
       <span>Started ${escapeHtml(formatMoment(run.started_at))}</span>
       <span>${run.finished_at ? `Ended ${escapeHtml(formatMoment(run.finished_at))}` : "In progress"}</span>
       <span>${escapeHtml(durationBetween(run.started_at, finished))}</span>
@@ -1049,11 +1308,16 @@ function openScheduledActivity(activityId) {
       <pre data-live-log tabindex="0" aria-label="Recent activity log">${escapeHtml(run.log_lines.join("\n") || "Waiting for the first log line...")}</pre>
     </section>
   `;
+  showDetailPeek(
+    "Scheduled activity",
+    { kind: "activity", id: activityId },
+    options,
+  );
   restoreEndAwareScroll(
-    inspector.querySelector("[data-live-log]"),
+    detailPeekContent.querySelector("[data-live-log]"),
     logScroll,
   );
-  restoreEndAwareScroll(activityInspector, inspectorScroll);
+  restoreEndAwareScroll(detailPeekContent, detailPeekScroll);
 }
 
 function captureEndAwareScroll(element) {
@@ -1073,21 +1337,20 @@ function restoreEndAwareScroll(element, snapshot) {
     : element.scrollHeight;
 }
 
-function openReceipt(runId, type) {
+function openReceipt(runId, type, options = {}) {
   const collection = type === "sync"
     ? state.receipts.sync
     : state.receipts.distill;
   const receipt = collection.find((item) => item.run_id === runId);
   if (!receipt) return;
   state.selectedActivityId = null;
-  document.body.classList.add("has-inspector");
   const changed = receipt.changed_files
     ? `${receipt.changed_files.length} Wiki files`
     : `${receipt.events_added} new events`;
-  inspector.innerHTML = `
+  detailPeekContent.innerHTML = `
     <p class="eyebrow">${escapeHtml(activityTaskLabel(type))} receipt</p>
-    <h2>${escapeHtml(activityStatusLabel(receipt.status))}</h2>
-    <div class="inspector-meta">
+    <h2 id="detail-peek-title">${escapeHtml(activityStatusLabel(receipt.status))}</h2>
+    <div class="detail-meta">
       <span>${escapeHtml(receipt.run_id)}</span>
       <span>${escapeHtml(changed)}</span>
       <span>${escapeHtml(durationBetween(receipt.started_at, receipt.finished_at))}</span>
@@ -1098,12 +1361,17 @@ function openReceipt(runId, type) {
     </div>
     ${distillOutcomeDetails(receipt)}
   `;
+  showDetailPeek(
+    "Run receipt",
+    { kind: "receipt", id: runId, type },
+    options,
+  );
 }
 
 function distillOutcomeDetails(receipt) {
   if (!receipt.session_outcomes || receipt.session_outcomes.length === 0) return "";
   return `
-    <div class="inspector-section">
+    <div class="detail-section">
       <div class="section-heading">
         <p class="eyebrow">Session outcomes</p>
         <span>${receipt.session_outcomes.length} reviewed</span>
@@ -1177,18 +1445,18 @@ async function syncTranscripts() {
   }
 }
 
-function openBuildWiki() {
-  document.body.classList.add("has-inspector");
-  inspector.innerHTML = `
+function openBuildWiki(options = {}) {
+  detailPeekContent.innerHTML = `
     <p class="eyebrow">Durable knowledge</p>
-    <h2>Build the Wiki</h2>
-    <div class="inspector-meta">
+    <h2 id="detail-peek-title">Build the Wiki</h2>
+    <div class="detail-meta">
       <span>${state.overview.pending_distill_count} sessions waiting</span>
       <span>${state.projects.length} project hubs</span>
     </div>
     <p class="quiet">The next bounded batch will be merged into canonical topic pages. Existing topics are updated instead of duplicated.</p>
     ${buildWikiControls()}
   `;
+  showDetailPeek("Wiki workflow", { kind: "build", id: "pending" }, options);
   const button = document.querySelector("#build-pending-button");
   button.addEventListener("click", distillPending);
 }
@@ -1259,11 +1527,11 @@ async function distillSelected() {
   }
 }
 
-function openHashTarget() {
+function openHashTarget(options = {}) {
   const prefix = "#/wiki/";
   if (!window.location.hash.startsWith(prefix)) return;
   const path = decodeURIComponent(window.location.hash.slice(prefix.length));
-  openPage(path);
+  openPage(path, options).catch((error) => showToast(error.message));
 }
 
 async function api(path, options = {}) {
