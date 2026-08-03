@@ -9,6 +9,10 @@ from urllib.request import url2pathname
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentworkmemory.integrations.transcripts.cursor_agent import (
+    discover_cursor_agent_transcripts,
+    read_cursor_agent_transcript,
+)
 from agentworkmemory.integrations.transcripts.models import (
     DiscoveredAgentSession,
     TranscriptReadResult,
@@ -65,27 +69,40 @@ class CursorTranscriptCollector:
 
     def discover(self, home: Path) -> tuple[DiscoveredAgentSession, ...]:
         database_path = self.database_path(home)
-        if database_path is None:
-            return ()
-        stat = database_path.stat()
         self.bubbles_by_composer = None
-        with cursor_snapshot(database_path) as connection:
-            headers = read_headers(connection)
-        return tuple(
-            DiscoveredAgentSession(
-                provider=self.provider,
-                provider_session_id=header.composer_id,
-                title=header.name.strip() or None,
-                cwd=cursor_workspace_path(header),
-                source_path=database_path.resolve(),
-                started_at=milliseconds_datetime(header.created_at),
-                modified_at=(
-                    milliseconds_datetime(header.last_updated_at)
-                    or datetime.fromtimestamp(stat.st_mtime, UTC)
-                ),
-                size_bytes=stat.st_size,
+        headers: tuple[CursorComposerHeader, ...] = ()
+        composer_ids_with_bubbles: frozenset[str] = frozenset()
+        if database_path is not None:
+            with cursor_snapshot(database_path) as connection:
+                headers = read_headers(connection)
+                composer_ids_with_bubbles = read_composer_ids_with_bubbles(
+                    connection
+                )
+        headers_by_id = {header.composer_id: header for header in headers}
+        discovered = {
+            session.provider_session_id: session
+            for session in cursor_agent_sessions(
+                home,
+                headers_by_id=headers_by_id,
+                database_path=database_path,
             )
-            for header in headers
+        }
+        if database_path is not None:
+            discovered.update(
+                legacy_cursor_sessions(
+                    database_path,
+                    headers,
+                    composer_ids_with_bubbles,
+                )
+            )
+        return tuple(
+            sorted(
+                discovered.values(),
+                key=lambda session: (
+                    session.modified_at,
+                    session.provider_session_id,
+                ),
+            )
         )
 
     def read(
@@ -95,6 +112,13 @@ class CursorTranscriptCollector:
         work_session_id: str,
         after_line: int,
     ) -> TranscriptReadResult:
+        content_path = session.content_path or session.source_path
+        if content_path.suffix.casefold() == ".jsonl":
+            return read_cursor_agent_transcript(
+                content_path,
+                work_session_id=work_session_id,
+                after_line=after_line,
+            )
         del after_line
         bubbles = self.bubbles(session)
         events = tuple(
@@ -132,6 +156,73 @@ class CursorTranscriptCollector:
             if path.is_file():
                 return path
         return None
+
+
+def legacy_cursor_sessions(
+    database_path: Path,
+    headers: tuple[CursorComposerHeader, ...],
+    composer_ids_with_bubbles: frozenset[str],
+) -> dict[str, DiscoveredAgentSession]:
+    stat = database_path.stat()
+    return {
+        header.composer_id: DiscoveredAgentSession(
+            provider=AgentProvider.CURSOR,
+            provider_session_id=header.composer_id,
+            title=header.name.strip() or None,
+            cwd=cursor_workspace_path(header),
+            source_path=database_path.resolve(),
+            started_at=milliseconds_datetime(header.created_at),
+            modified_at=(
+                milliseconds_datetime(header.last_updated_at)
+                or datetime.fromtimestamp(stat.st_mtime, UTC)
+            ),
+            size_bytes=stat.st_size,
+        )
+        for header in headers
+        if header.composer_id in composer_ids_with_bubbles
+    }
+
+
+def cursor_agent_sessions(
+    home: Path,
+    *,
+    headers_by_id: dict[str, CursorComposerHeader],
+    database_path: Path | None,
+) -> tuple[DiscoveredAgentSession, ...]:
+    sessions: list[DiscoveredAgentSession] = []
+    for transcript in discover_cursor_agent_transcripts(home):
+        composer_id = transcript.composer_id
+        header = headers_by_id.get(composer_id)
+        identity_path = database_path if header is not None else transcript.path
+        resolved_content = transcript.path
+        resolved_identity = identity_path.resolve()
+        sessions.append(
+            DiscoveredAgentSession(
+                provider=AgentProvider.CURSOR,
+                provider_session_id=composer_id,
+                title=(header.name.strip() or None) if header is not None else None,
+                cwd=cursor_workspace_path(header) if header is not None else None,
+                source_path=resolved_identity,
+                content_path=(
+                    resolved_content
+                    if resolved_content != resolved_identity
+                    else None
+                ),
+                started_at=(
+                    milliseconds_datetime(header.created_at)
+                    if header is not None
+                    else None
+                ),
+                modified_at=(
+                    milliseconds_datetime(header.last_updated_at)
+                    if header is not None
+                    else None
+                )
+                or transcript.modified_at,
+                size_bytes=transcript.size_bytes,
+            )
+        )
+    return tuple(sessions)
 
 
 def cursor_user_storage_candidates(home: Path) -> tuple[Path, ...]:
@@ -172,6 +263,22 @@ def read_headers(connection: sqlite3.Connection) -> tuple[CursorComposerHeader, 
         except ValueError:
             continue
     return tuple(headers)
+
+
+def read_composer_ids_with_bubbles(
+    connection: sqlite3.Connection,
+) -> frozenset[str]:
+    if not table_exists(connection, "cursorDiskKV"):
+        return frozenset()
+    rows = connection.execute(
+        "SELECT key FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'"
+    ).fetchall()
+    composer_ids: set[str] = set()
+    for row in rows:
+        key_parts = row["key"].split(":", 2)
+        if len(key_parts) == 3 and key_parts[1]:
+            composer_ids.add(key_parts[1])
+    return frozenset(composer_ids)
 
 
 def read_all_bubbles(

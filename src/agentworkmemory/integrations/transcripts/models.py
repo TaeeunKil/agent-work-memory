@@ -12,6 +12,7 @@ class DiscoveredAgentSession(AgentWorkMemoryModel):
     title: str | None = None
     cwd: Path | None
     source_path: Path
+    content_path: Path | None = None
     modified_at: datetime
     size_bytes: int
     started_at: datetime | None = None

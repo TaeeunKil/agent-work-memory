@@ -68,6 +68,7 @@ class CollectAgentRecordsWorkflow:
                 session_ids.append(session.session_id)
                 if request.include_content:
                     source_id = stable_source_id(discovered)
+                    content_path = discovered.content_path or discovered.source_path
                     cursor = self.sessions.cursor_for(source_id)
                     after_line = 0 if cursor is None else cursor.last_line
                     if cursor is not None and discovered.size_bytes < cursor.size_bytes:
@@ -83,7 +84,7 @@ class CollectAgentRecordsWorkflow:
                         CollectorCursor(
                             source_id=source_id,
                             provider=provider,
-                            source_path=discovered.source_path,
+                            source_path=content_path,
                             last_line=read.last_line,
                             size_bytes=read.size_bytes,
                             updated_at=discovered.modified_at,
@@ -119,9 +120,10 @@ class CollectAgentRecordsWorkflow:
 
 
 def stable_source_id(discovered: DiscoveredAgentSession) -> str:
+    content_path = discovered.content_path or discovered.source_path
     identity = (
         f"{discovered.provider}\0"
-        f"{discovered.provider_session_id}\0{discovered.source_path}"
+        f"{discovered.provider_session_id}\0{content_path}"
     )
     return f"src_{sha256(identity.encode()).hexdigest()[:24]}"
 

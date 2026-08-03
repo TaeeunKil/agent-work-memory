@@ -122,6 +122,176 @@ def test_cursor_collection_adds_new_bubbles_incrementally(tmp_path: Path):
     ] == ["First message", "Later response"]
 
 
+def test_current_cursor_agent_transcript_enters_the_pipeline_incrementally(
+    tmp_path: Path,
+):
+    app = create_app(
+        AgentWorkMemoryConfig(
+            state_dir=tmp_path / "state",
+            vault_path=None,
+        )
+    )
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    database = write_cursor_database(
+        home,
+        composer_id="current-cursor-session",
+        name="Current Cursor transcript",
+        workspace_uri="file:///C:/cursor-current-project",
+    )
+    transcript = write_cursor_agent_transcript(
+        home,
+        composer_id="current-cursor-session",
+        project_slug="C-cursor-current-project",
+    )
+    write_cursor_agent_message(
+        transcript,
+        role="user",
+        text=(
+            "<user_query>\n"
+            "Capture the current Cursor transcript format.\n"
+            "</user_query>"
+        ),
+    )
+    write_cursor_agent_message(
+        transcript,
+        role="assistant",
+        text="Current Cursor Agent work now enters memory.\n\n[REDACTED]",
+        tool_name="read_file",
+    )
+    write_cursor_agent_message(
+        transcript,
+        role="assistant",
+        text="[REDACTED]",
+    )
+    request = CollectAgentRecords(
+        providers=(AgentProvider.CURSOR,),
+        home=home,
+        include_content=True,
+    )
+
+    first = app.collect.collect(request)
+    write_cursor_agent_message(
+        transcript,
+        role="assistant",
+        text="A later response is collected incrementally.",
+    )
+    second = app.collect.collect(request)
+
+    assert first.sessions_discovered == 1
+    assert first.events_added == 2
+    assert second.events_added == 1
+    session = app.sessions.get(first.session_ids[0])
+    assert session.source_path == database.resolve()
+    assert session.title == "Current Cursor transcript"
+    assert [
+        (event.role, event.content)
+        for event in app.sessions.events(session.session_id)
+    ] == [
+        ("user", "Capture the current Cursor transcript format."),
+        ("assistant", "Current Cursor Agent work now enters memory."),
+        ("assistant", "A later response is collected incrementally."),
+    ]
+
+
+def test_cursor_jsonl_uses_header_identity_and_metadata(tmp_path: Path):
+    home = tmp_path / "home"
+    workspace = Path("C:/cursor-jsonl-project")
+    database = write_cursor_database(
+        home,
+        composer_id="jsonl-with-header",
+        name="Current Cursor Agent",
+        workspace_uri=workspace.as_uri(),
+    )
+    transcript = write_cursor_agent_transcript(
+        home,
+        composer_id="jsonl-with-header",
+        project_slug="C-cursor-jsonl-project",
+    )
+    write_cursor_agent_message(
+        transcript,
+        role="user",
+        text="Use the durable transcript body.",
+    )
+
+    sessions = CursorTranscriptCollector().discover(home)
+
+    assert len(sessions) == 1
+    assert sessions[0].source_path == database.resolve()
+    assert sessions[0].content_path == transcript.resolve()
+    assert sessions[0].title == "Current Cursor Agent"
+    assert sessions[0].cwd == workspace
+
+
+def test_cursor_prefers_existing_legacy_bubbles_and_excludes_empty_headers(
+    tmp_path: Path,
+):
+    home = tmp_path / "home"
+    database = write_cursor_database(
+        home,
+        composer_id="legacy-and-jsonl",
+        name="Legacy conversation",
+        workspace_uri="file:///C:/cursor-legacy-project",
+    )
+    write_cursor_header(
+        database,
+        composer_id="empty-header",
+        name="",
+        workspace_uri="file:///C:/cursor-empty-project",
+    )
+    write_cursor_bubble(
+        database,
+        "legacy-and-jsonl",
+        "legacy-bubble",
+        bubble_type=1,
+        text="Keep the established source identity.",
+        created_at="2026-07-29T01:00:00Z",
+    )
+    transcript = write_cursor_agent_transcript(
+        home,
+        composer_id="legacy-and-jsonl",
+        project_slug="C-cursor-legacy-project",
+    )
+    write_cursor_agent_message(
+        transcript,
+        role="user",
+        text="This duplicate source must not create another session.",
+    )
+
+    sessions = CursorTranscriptCollector().discover(home)
+
+    assert [session.provider_session_id for session in sessions] == [
+        "legacy-and-jsonl"
+    ]
+    assert sessions[0].source_path == database.resolve()
+    assert sessions[0].content_path is None
+
+
+def test_cursor_ignores_subagent_transcript_files(tmp_path: Path):
+    home = tmp_path / "home"
+    transcript = write_cursor_agent_transcript(
+        home,
+        composer_id="parent-agent",
+        project_slug="C-cursor-subagents",
+    )
+    write_cursor_agent_message(
+        transcript,
+        role="user",
+        text="Only the parent Agent is a retained session.",
+    )
+    subagent = transcript.parent / "subagents" / "child-agent.jsonl"
+    subagent.parent.mkdir()
+    write_cursor_agent_message(
+        subagent,
+        role="assistant",
+        text="Do not create a separate child session.",
+    )
+
+    sessions = CursorTranscriptCollector().discover(home)
+
+    assert [session.provider_session_id for session in sessions] == ["parent-agent"]
+
+
 def test_cursor_workspace_uris_cover_local_wsl_and_ssh(tmp_path: Path):
     home = tmp_path / "home"
     database = write_cursor_database(
@@ -150,6 +320,15 @@ def test_cursor_workspace_uris_cover_local_wsl_and_ssh(tmp_path: Path):
         name="SSH",
         workspace_uri="vscode-remote://ssh-remote+ovion-dev-157/home/user/ssh-project",
     )
+    for composer_id in ("local", "wsl", "ssh"):
+        write_cursor_bubble(
+            database,
+            composer_id,
+            f"bubble-{composer_id}",
+            bubble_type=1,
+            text=f"{composer_id} work",
+            created_at="2026-07-29T00:00:00Z",
+        )
 
     sessions = CursorTranscriptCollector().discover(home)
     by_id = {session.provider_session_id: session for session in sessions}
@@ -258,3 +437,47 @@ def write_cursor_bubble(
                 json.dumps(payload).encode(),
             ),
         )
+
+
+def write_cursor_agent_transcript(
+    home: Path,
+    *,
+    composer_id: str,
+    project_slug: str,
+) -> Path:
+    transcript = (
+        home
+        / ".cursor"
+        / "projects"
+        / project_slug
+        / "agent-transcripts"
+        / composer_id
+        / f"{composer_id}.jsonl"
+    )
+    transcript.parent.mkdir(parents=True)
+    transcript.touch()
+    return transcript
+
+
+def write_cursor_agent_message(
+    transcript: Path,
+    *,
+    role: str,
+    text: str,
+    tool_name: str | None = None,
+) -> None:
+    content: list[dict[str, object]] = [{"type": "text", "text": text}]
+    if tool_name is not None:
+        content.append(
+            {
+                "type": "tool_use",
+                "name": tool_name,
+                "input": {"path": "README.md"},
+            }
+        )
+    payload = {
+        "role": role,
+        "message": {"content": content},
+    }
+    with transcript.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(payload) + "\n")
