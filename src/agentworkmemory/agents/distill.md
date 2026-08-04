@@ -43,6 +43,11 @@ short_title_ko: 간결한 한국어 제목
 short_title_en: Concise English title
 ```
 
+When updating an existing page, preserve every existing frontmatter field and
+edit the parsed fields in place. Never rebuild frontmatter from memory. In
+particular, do not drop either graph label, the canonical body language,
+sources, tags, or metadata you did not introduce.
+
 Every changed durable page also needs `language: ko` or `language: en` in its
 YAML frontmatter. This identifies the language of the canonical body, not the
 languages available as derived translations.

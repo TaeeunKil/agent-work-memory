@@ -9,6 +9,7 @@ from io import TextIOBase
 from pathlib import Path
 
 from agentworkmemory.cli import main as cli_main
+from agentworkmemory.integrations.processes import PsutilActivityProcessProbe
 from agentworkmemory.services.activity import ActivityRun, ActivityService, ActivityTask
 
 MAX_SCHEDULED_LOG_BYTES = 5 * 1024 * 1024
@@ -20,7 +21,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     log_path = scheduled_log_path(state_dir, arguments)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     rotate_log(log_path)
-    activity = ActivityService(state_dir / "activity")
+    activity = ActivityService(
+        state_dir / "activity",
+        PsutilActivityProcessProbe(),
+    )
     run = begin_activity(activity, scheduled_task(arguments))
     with (
         log_path.open("a", encoding="utf-8", buffering=1) as log_stream,
@@ -31,7 +35,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"[{timestamp()}] scheduled run started")
         try:
             exit_code = cli_main(arguments)
-        except Exception:
+        except (Exception, KeyboardInterrupt, SystemExit):
             traceback.print_exc()
             exit_code = 1
         print(f"[{timestamp()}] scheduled run finished: exit {exit_code}")

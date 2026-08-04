@@ -151,6 +151,29 @@ class VaultService:
             validate_markdown_page(path)
         return changed
 
+    def preserve_curator_frontmatter(
+        self,
+        snapshot: VaultSnapshot,
+    ) -> tuple[Path, ...]:
+        preserved: list[Path] = []
+        for relative in snapshot.changed_files():
+            original = snapshot.files.get(relative)
+            if original is None or not allowed_distill_path(relative):
+                continue
+            target = snapshot.root / relative
+            if not target.is_file():
+                continue
+            current = read_vault_bytes(target).decode("utf-8")
+            repaired = preserve_existing_frontmatter(
+                original.decode("utf-8"),
+                current,
+            )
+            if repaired == current:
+                continue
+            target.write_text(repaired, encoding="utf-8")
+            preserved.append(relative)
+        return tuple(preserved)
+
     def apply_distill_changes(
         self,
         workspace: Path,
@@ -337,6 +360,30 @@ def validate_markdown_page(path: Path) -> None:
             raise ValueError(f"Wiki page needs {key}: {path.name}")
     if not any(line.startswith("# ") for line in body.splitlines()):
         raise ValueError(f"Wiki page needs an H1 title: {path.name}")
+
+
+def preserve_existing_frontmatter(original: str, current: str) -> str:
+    original_metadata, _ = split_frontmatter(original)
+    if not original_metadata:
+        return current
+    current_metadata, body = split_frontmatter(current)
+    merged = dict(original_metadata)
+    merged.update(current_metadata)
+    for key in ("short_title_ko", "short_title_en"):
+        value = current_metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            continue
+        original_value = original_metadata.get(key)
+        if isinstance(original_value, str) and original_value.strip():
+            merged[key] = original_value
+    if merged == current_metadata:
+        return current
+    frontmatter = yaml.safe_dump(
+        merged,
+        allow_unicode=True,
+        sort_keys=False,
+    ).rstrip()
+    return f"---\n{frontmatter}\n---\n{body.lstrip()}".rstrip() + "\n"
 
 
 def restore_originals(root: Path, originals: dict[Path, bytes | None]) -> None:

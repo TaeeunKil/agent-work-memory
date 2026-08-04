@@ -94,6 +94,7 @@ def test_curator_instructions_require_bilingual_graph_titles():
     assert "short_title_ko" in instructions
     assert "short_title_en" in instructions
     assert "semantic labels" in instructions
+    assert "Never rebuild frontmatter from memory" in instructions
 
 
 def test_distill_promotes_session_into_durable_wiki(tmp_path: Path):
@@ -126,6 +127,44 @@ def test_distill_promotes_session_into_durable_wiki(tmp_path: Path):
     assert stored is not None
     assert stored.session_ids == (session.session_id,)
     assert "Use one central writer" not in (stored.output_summary or "")
+
+
+def test_distill_repairs_existing_frontmatter_omitted_by_curator(tmp_path: Path):
+    adapter = FakeCuratorAdapter(mutate=rewrite_decision_without_korean_title)
+    app = distill_app(tmp_path, adapter)
+    vault = app.vault.initialize(tmp_path / "vault")
+    target = vault / "decisions" / "existing-decision.md"
+    target.write_text(
+        """---
+short_title_ko: 기존 결정
+short_title_en: Existing decision
+language: en
+tags:
+  - retained
+---
+# Existing decision
+
+Original body.
+""",
+        encoding="utf-8",
+    )
+    session = note_session(app, "Update the existing decision.")
+
+    receipt = app.distill.run(
+        DistillSessions(
+            session_ids=(session.session_id,),
+            runtime=adapter.runtime,
+            content_access=ContentAccess.SELECTED_LOCAL,
+        )
+    )
+
+    applied = target.read_text(encoding="utf-8")
+    assert receipt.status is DistillStatus.SUCCEEDED
+    assert receipt.changed_files == (Path("decisions/existing-decision.md"),)
+    assert "short_title_ko: 기존 결정" in applied
+    assert "short_title_en: Revised decision" in applied
+    assert "- retained" in applied
+    assert "Revised body." in applied
 
 
 def test_metadata_only_prompt_withholds_event_bodies(tmp_path: Path):
@@ -944,6 +983,21 @@ sources:
 # Central Writer
 
 Use a single writer for durable Markdown knowledge. [@selected-session]
+""",
+        encoding="utf-8",
+    )
+
+
+def rewrite_decision_without_korean_title(request: CuratorRunRequest) -> None:
+    path = request.vault_path / "decisions/existing-decision.md"
+    path.write_text(
+        """---
+short_title_en: Revised decision
+language: en
+---
+# Revised decision
+
+Revised body.
 """,
         encoding="utf-8",
     )

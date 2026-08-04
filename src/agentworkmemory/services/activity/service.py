@@ -10,6 +10,7 @@ from agentworkmemory.services.activity.models import (
     ActivityStatus,
     ActivityTask,
 )
+from agentworkmemory.services.activity.ports import ActivityProcessProbe
 
 MAX_ACTIVITY_RUNS = 30
 MAX_ACTIVITY_LOG_LINES = 80
@@ -17,8 +18,9 @@ MAX_ACTIVITY_LINE_LENGTH = 500
 
 
 class ActivityService:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, process_probe: ActivityProcessProbe):
         self.root = root
+        self.process_probe = process_probe
 
     def begin(
         self,
@@ -36,7 +38,11 @@ class ActivityService:
             summary=running_summary(task),
         )
         with self.lock(task):
-            ledger = self.load(task)
+            ledger = reconciled_ledger(
+                self.load(task),
+                self.process_probe,
+                datetime.now(UTC),
+            )
             self.save(
                 task,
                 ActivityLedger(runs=(run, *ledger.runs)[:MAX_ACTIVITY_RUNS]),
@@ -88,11 +94,23 @@ class ActivityService:
         runs = tuple(
             run
             for task in ActivityTask
-            for run in self.load(task).runs
+            for run in self.reconcile(task).runs
         )
         return tuple(
             sorted(runs, key=lambda run: run.started_at, reverse=True)[:limit]
         )
+
+    def reconcile(self, task: ActivityTask) -> ActivityLedger:
+        with self.lock(task):
+            ledger = self.load(task)
+            reconciled = reconciled_ledger(
+                ledger,
+                self.process_probe,
+                datetime.now(UTC),
+            )
+            if reconciled != ledger:
+                self.save(task, reconciled)
+            return reconciled
 
     def load(self, task: ActivityTask) -> ActivityLedger:
         path = self.path(task)
@@ -202,3 +220,36 @@ def replace_ledger_run(
     if not found:
         runs.insert(0, updated)
     return ActivityLedger(runs=tuple(runs[:MAX_ACTIVITY_RUNS]))
+
+
+def reconcile_run(
+    run: ActivityRun,
+    process_probe: ActivityProcessProbe,
+    checked_at: datetime,
+) -> ActivityRun:
+    if run.status is not ActivityStatus.RUNNING:
+        return run
+    if process_probe.running(run.process_id, run.started_at):
+        return run
+    message = "Activity process ended before reporting completion."
+    return run.model_copy(
+        update={
+            "status": ActivityStatus.FAILED,
+            "finished_at": checked_at,
+            "summary": "Process ended before completion",
+            "log_lines": (*run.log_lines, message)[-MAX_ACTIVITY_LOG_LINES:],
+        }
+    )
+
+
+def reconciled_ledger(
+    ledger: ActivityLedger,
+    process_probe: ActivityProcessProbe,
+    checked_at: datetime,
+) -> ActivityLedger:
+    return ActivityLedger(
+        runs=tuple(
+            reconcile_run(run, process_probe, checked_at)
+            for run in ledger.runs
+        )
+    )

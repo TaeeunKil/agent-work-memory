@@ -9,6 +9,7 @@ from agentworkmemory.integrations.curators import (
     OllamaCuratorAdapter,
     YokeCuratorAdapter,
 )
+from agentworkmemory.integrations.processes import PsutilActivityProcessProbe
 from agentworkmemory.integrations.remotes import SshRemoteSnapshotAdapter
 from agentworkmemory.integrations.transcripts import (
     ClaudeTranscriptCollector,
@@ -168,7 +169,10 @@ def create_app(
     synchronization = SynchronizationService(
         SynchronizationStore(resolved.database_path)
     )
-    activity = ActivityService(resolved.state_dir / "activity")
+    activity = ActivityService(
+        resolved.state_dir / "activity",
+        PsutilActivityProcessProbe(),
+    )
     sync = SyncAgentRecordsWorkflow(
         collect,
         remote_sync,

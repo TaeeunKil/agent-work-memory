@@ -42,6 +42,8 @@ def distill_prompt(
         "",
         "Source contract:",
         "- Every changed durable page must have YAML frontmatter.",
+        "- When updating a page, preserve every existing frontmatter field;",
+        "  never rebuild frontmatter from memory.",
         "- Preserve existing sources and append each supporting session once.",
         "- Use this exact source shape:",
         "  sources:",

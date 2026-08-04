@@ -137,6 +137,79 @@ def test_curator_changes_require_bilingual_graph_titles(tmp_path: Path):
             app.vault.validate_distill_changes(snapshot)
 
 
+def test_curator_preserves_existing_frontmatter_before_validation(tmp_path: Path):
+    app = wiki_app(tmp_path)
+    vault = app.vault.initialize(tmp_path / "vault")
+    canonical = vault / "decisions" / "stable-metadata.md"
+    canonical.write_text(
+        """---
+short_title_ko: 안정 메타데이터
+short_title_en: Stable metadata
+language: en
+tags:
+  - architecture
+sources:
+  - session_id: ses_original
+    provider: codex
+---
+# Stable metadata
+
+Original body.
+""",
+        encoding="utf-8",
+    )
+
+    with app.vault.curator_workspace() as (workspace, snapshot, _):
+        target = workspace / "decisions" / "stable-metadata.md"
+        target.write_text(
+            """---
+short_title_en: Revised metadata
+language: en
+---
+# Revised metadata
+
+Curator body.
+""",
+            encoding="utf-8",
+        )
+
+        preserved = app.vault.preserve_curator_frontmatter(snapshot)
+        changed = app.vault.validate_distill_changes(snapshot)
+        repaired = target.read_text(encoding="utf-8")
+
+    assert preserved == (Path("decisions/stable-metadata.md"),)
+    assert changed == preserved
+    assert "short_title_ko: 안정 메타데이터" in repaired
+    assert "short_title_en: Revised metadata" in repaired
+    assert "tags:\n- architecture" in repaired
+    assert "session_id: ses_original" in repaired
+    assert "Curator body." in repaired
+
+
+def test_curator_frontmatter_preservation_leaves_deletion_for_validation(
+    tmp_path: Path,
+):
+    app = wiki_app(tmp_path)
+    vault = app.vault.initialize(tmp_path / "vault")
+    canonical = vault / "decisions" / "deleted.md"
+    canonical.write_text(
+        """---
+short_title_ko: 삭제됨
+short_title_en: Deleted
+---
+# Deleted
+""",
+        encoding="utf-8",
+    )
+
+    with app.vault.curator_workspace() as (workspace, snapshot, _):
+        (workspace / "decisions" / "deleted.md").unlink()
+
+        assert app.vault.preserve_curator_frontmatter(snapshot) == ()
+        with pytest.raises(ValueError, match="deleted durable Wiki page"):
+            app.vault.validate_distill_changes(snapshot)
+
+
 def test_curator_workspace_ignores_large_session_record_layer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -320,6 +393,7 @@ def test_distill_prompt_supplies_navigable_session_link(tmp_path: Path):
     assert "Merge new evidence into an existing page" in prompt
     assert "Maintain one projects/<project-slug>.md hub" in prompt
     assert "Preserve existing sources and append each supporting session once" in prompt
+    assert "preserve every existing frontmatter field" in prompt
     assert "both short_title_ko and" in prompt
     assert "short_title_en in YAML frontmatter" in prompt
     assert f"- Workspace: {session.cwd or 'unknown'}" in prompt

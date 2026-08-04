@@ -1,3 +1,4 @@
+import os
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -514,7 +515,7 @@ def test_viewer_exposes_clickable_scheduled_activity_data(tmp_path: Path):
     app, _ = viewer_fixture(tmp_path)
     run = app.activity.begin(
         ActivityTask.SYNC,
-        process_id=1234,
+        process_id=os.getpid(),
     )
     app.activity.append_log(run, "Collecting SSH transcripts")
     client = TestClient(create_viewer_app(app))

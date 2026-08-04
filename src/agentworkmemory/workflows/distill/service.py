@@ -86,6 +86,7 @@ class DistillSessionsWorkflow:
                         f"{result.status.value}: {first_line(result.output_text)}"
                     )
                 self.vault.normalize_curator_workspace_permissions(workspace)
+                self.vault.preserve_curator_frontmatter(snapshot)
                 changed = self.vault.validate_distill_changes(snapshot)
                 self.vault.apply_distill_changes(workspace, changed)
             outcomes = classify_session_outcomes(
