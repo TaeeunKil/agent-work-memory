@@ -9,8 +9,10 @@ from filelock import FileLock
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import build_parser, dispatch
 from agentworkmemory.integrations.automation.windows import (
+    background_python_executable,
     scheduled_sync_action,
     scheduled_task_next_run,
+    windows_executable_subsystem,
 )
 from agentworkmemory.services.automation.models import AutoSyncSettings
 from agentworkmemory.services.sessions.models import AgentProvider
@@ -172,7 +174,14 @@ def test_automation_persists_explicit_private_content_choice(tmp_path: Path):
     assert not (tmp_path / "state" / "auto-sync.json").exists()
 
 
-def test_scheduled_action_uses_module_and_no_remote_distillation(tmp_path: Path):
+def test_scheduled_action_uses_module_and_no_remote_distillation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "agentworkmemory.integrations.automation.windows.background_python_executable",
+        lambda: r"C:\AWM Runtime\pythonw.exe",
+    )
     settings = AutoSyncSettings(
         interval_minutes=5,
         providers=(AgentProvider.CODEX, AgentProvider.CLAUDE),
@@ -188,6 +197,102 @@ def test_scheduled_action_uses_module_and_no_remote_distillation(tmp_path: Path)
     assert "--from claude" in action
     assert "--include-content" not in action
     assert "distill" not in action
+
+
+def test_background_python_prefers_current_gui_runtime(tmp_path: Path):
+    current = tmp_path / "project" / "Scripts" / "python.exe"
+    current.parent.mkdir(parents=True)
+    write_windows_executable(current.with_name("pythonw.exe"), subsystem=2)
+    tool = tmp_path / "tools" / "agent-work-memory" / "Scripts" / "pythonw.exe"
+    write_windows_executable(tool, subsystem=2)
+
+    selected = background_python_executable(
+        executable=current,
+        environment={"UV_TOOL_DIR": str(tmp_path / "tools")},
+        platform="win32",
+    )
+
+    assert selected == str(current.with_name("pythonw.exe"))
+
+
+def test_background_python_rejects_console_venv_and_uses_uv_tool(tmp_path: Path):
+    current = tmp_path / "project" / "Scripts" / "python.exe"
+    current.parent.mkdir(parents=True)
+    write_windows_executable(current.with_name("pythonw.exe"), subsystem=3)
+    tool = tmp_path / "tools" / "agent-work-memory" / "Scripts" / "pythonw.exe"
+    write_windows_executable(tool, subsystem=2)
+
+    selected = background_python_executable(
+        executable=current,
+        environment={"UV_TOOL_DIR": str(tmp_path / "tools")},
+        platform="win32",
+    )
+
+    assert selected == str(tool)
+
+
+def test_background_python_uses_default_app_data_tool_path(tmp_path: Path):
+    current = tmp_path / "project" / "Scripts" / "python.exe"
+    current.parent.mkdir(parents=True)
+    write_windows_executable(current.with_name("pythonw.exe"), subsystem=3)
+    tool = (
+        tmp_path
+        / "Roaming"
+        / "uv"
+        / "tools"
+        / "agent-work-memory"
+        / "Scripts"
+        / "pythonw.exe"
+    )
+    write_windows_executable(tool, subsystem=2)
+
+    selected = background_python_executable(
+        executable=current,
+        environment={"APPDATA": str(tmp_path / "Roaming")},
+        platform="win32",
+    )
+
+    assert selected == str(tool)
+
+
+def test_background_python_resolves_relative_uv_tool_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.chdir(tmp_path)
+    current = tmp_path / "project" / "Scripts" / "python.exe"
+    current.parent.mkdir(parents=True)
+    write_windows_executable(current.with_name("pythonw.exe"), subsystem=3)
+    tool = tmp_path / "tools" / "agent-work-memory" / "Scripts" / "pythonw.exe"
+    write_windows_executable(tool, subsystem=2)
+
+    selected = background_python_executable(
+        executable=current,
+        environment={"UV_TOOL_DIR": "tools"},
+        platform="win32",
+    )
+
+    assert selected == str(tool)
+
+
+def test_background_python_refuses_to_register_console_task(tmp_path: Path):
+    current = tmp_path / "project" / "Scripts" / "python.exe"
+    current.parent.mkdir(parents=True)
+    write_windows_executable(current.with_name("pythonw.exe"), subsystem=3)
+
+    with pytest.raises(RuntimeError, match="consoleless Windows Python"):
+        background_python_executable(
+            executable=current,
+            environment={},
+            platform="win32",
+        )
+
+
+def test_windows_executable_subsystem_rejects_non_pe_file(tmp_path: Path):
+    executable = tmp_path / "pythonw.exe"
+    executable.write_bytes(b"not a Windows executable")
+
+    assert windows_executable_subsystem(executable) is None
 
 
 def test_windows_scheduler_reads_structured_next_run(
@@ -294,3 +399,19 @@ def write_codex_transcript(home: Path, workspace: Path) -> Path:
         encoding="utf-8",
     )
     return transcript
+
+
+def write_windows_executable(path: Path, *, subsystem: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pe_offset = 0x80
+    optional_header = pe_offset + 4 + 20
+    payload = bytearray(optional_header + 70)
+    payload[:2] = b"MZ"
+    payload[0x3C:0x40] = pe_offset.to_bytes(4, "little")
+    payload[pe_offset : pe_offset + 4] = b"PE\0\0"
+    payload[optional_header : optional_header + 2] = (0x20B).to_bytes(2, "little")
+    payload[optional_header + 68 : optional_header + 70] = subsystem.to_bytes(
+        2,
+        "little",
+    )
+    path.write_bytes(payload)

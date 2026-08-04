@@ -452,7 +452,12 @@ def test_local_preflight_failure_does_not_consume_standing_grant(
 
 def test_scheduled_auto_distill_action_contains_only_private_state_pointer(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
+    monkeypatch.setattr(
+        "agentworkmemory.integrations.auto_distillation.windows.background_python_executable",
+        lambda: r"C:\AWM Runtime\pythonw.exe",
+    )
     action = scheduled_auto_distill_action(tmp_path / "Private State")
 
     assert "pythonw.exe" in action

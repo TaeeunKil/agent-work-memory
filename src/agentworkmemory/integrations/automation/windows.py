@@ -1,7 +1,9 @@
 import json
+import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 
@@ -9,6 +11,8 @@ from agentworkmemory.integrations.processes import hidden_process_creation_flags
 from agentworkmemory.services.automation.models import AutoSyncSettings
 
 TASK_NAME = "AWM Sync"
+WINDOWS_GUI_SUBSYSTEM = 2
+UV_TOOL_PACKAGE_DIRECTORY = "agent-work-memory"
 
 
 class WindowsSchedulerAdapter:
@@ -66,8 +70,84 @@ def scheduled_sync_action(settings: AutoSyncSettings, state_dir: Path) -> str:
     return subprocess.list2cmdline(command)
 
 
-def background_python_executable() -> str:
-    return str(Path(sys.executable).with_name("pythonw.exe"))
+def background_python_executable(
+    *,
+    executable: Path | None = None,
+    environment: Mapping[str, str] | None = None,
+    platform: str | None = None,
+) -> str:
+    foreground = executable or Path(sys.executable)
+    resolved_platform = platform or sys.platform
+    if resolved_platform != "win32":
+        return str(foreground.with_name("pythonw.exe"))
+
+    resolved_environment = os.environ if environment is None else environment
+    for candidate in windows_background_python_candidates(
+        foreground,
+        resolved_environment,
+    ):
+        if windows_executable_subsystem(candidate) == WINDOWS_GUI_SUBSYSTEM:
+            return str(candidate)
+    raise RuntimeError(
+        "AWM could not find a consoleless Windows Python runtime; "
+        "install AWM as a standalone uv tool and run the installed `awm` command"
+    )
+
+
+def windows_background_python_candidates(
+    executable: Path,
+    environment: Mapping[str, str],
+) -> tuple[Path, ...]:
+    candidates = [executable.with_name("pythonw.exe")]
+    tool_dir = environment.get("UV_TOOL_DIR")
+    if tool_dir:
+        uv_tools = Path(tool_dir).expanduser().resolve()
+    else:
+        app_data = environment.get("APPDATA")
+        uv_tools = (
+            (Path(app_data).expanduser() / "uv" / "tools").resolve()
+            if app_data
+            else None
+        )
+    if uv_tools is not None:
+        candidates.append(
+            uv_tools
+            / UV_TOOL_PACKAGE_DIRECTORY
+            / "Scripts"
+            / "pythonw.exe"
+        )
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        identity = str(candidate).casefold()
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(candidate)
+    return tuple(unique)
+
+
+def windows_executable_subsystem(path: Path) -> int | None:
+    try:
+        with path.open("rb") as executable_file:
+            if executable_file.read(2) != b"MZ":
+                return None
+            executable_file.seek(0x3C)
+            pe_offset = int.from_bytes(executable_file.read(4), "little")
+            executable_file.seek(pe_offset)
+            if executable_file.read(4) != b"PE\0\0":
+                return None
+            optional_header = pe_offset + 4 + 20
+            executable_file.seek(optional_header)
+            if int.from_bytes(executable_file.read(2), "little") not in {
+                0x10B,
+                0x20B,
+            }:
+                return None
+            executable_file.seek(optional_header + 68)
+            return int.from_bytes(executable_file.read(2), "little")
+    except OSError:
+        return None
 
 
 def run_schtasks(arguments: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
