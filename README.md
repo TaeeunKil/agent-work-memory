@@ -1,97 +1,211 @@
 # Agent Work Memory
 
-**AWM** is a private local memory and Wiki for work performed with Codex,
-Claude, local LLMs, and other coding agents.
+**Agent Work Memory (AWM)** is a private local memory and Markdown Wiki for work
+performed with Codex, Claude, Cursor, local LLMs, and other coding agents.
 
-It retains agent sessions across repositories, keeps the evidence searchable,
-and promotes selected work into durable Markdown pages for decisions, systems,
-problems, procedures, projects, and unfinished work.
+AWM retains agent sessions across repositories and explicitly registered SSH
+machines, keeps the evidence searchable, and promotes selected work into durable
+pages for projects, decisions, systems, problems, procedures, and unfinished
+work.
 
-## Install this fork
+> AWM is currently an alpha installed from this source repository. The complete
+> automatic-sync and automatic-distillation experience is implemented for
+> Windows. The core CLI can run on macOS or Linux, but scheduled commands must be
+> run manually there.
+
+## What gets installed
+
+AWM has three separate layers:
+
+| Layer | Default location on Windows | Contains |
+| --- | --- | --- |
+| Application | uv's isolated tool directory | AWM and all Python packages |
+| Private state | `%LOCALAPPDATA%\AgentWorkMemory` | SQLite, retained events, logs, locks, SSH snapshots |
+| Markdown Vault | chosen during `awm setup` | durable Wiki and retained session pages |
+
+The source checkout is shareable application code. The state directory and
+Vault are private data and must not be committed to this repository.
+
+## Windows quick start
+
+These commands are intended for a normal, non-administrator PowerShell unless a
+step says otherwise.
+
+### 1. Install the two required tools
+
+AWM users need **Git** and **uv**. Install both with Windows Package Manager:
+
+```powershell
+winget install --id Git.Git -e --source winget
+winget install --id astral-sh.uv -e --source winget
+```
+
+Close and reopen PowerShell, then verify them:
+
+```powershell
+git --version
+uv --version
+```
+
+Official alternatives are available from the [Git for Windows installer][git]
+and the [uv installation guide][uv-install].
+
+You do **not** need to install Python separately. AWM requires Python 3.12 or
+newer, and uv downloads a compatible Python automatically when necessary. On a
+managed or offline machine, preinstall it explicitly with:
+
+```powershell
+uv python install 3.12
+```
+
+See [uv's Python management guide][uv-python] for download and system-Python
+controls.
+
+### 2. Clone and install AWM
 
 ```powershell
 git clone https://github.com/TaeeunKil/agent-work-memory.git
-cd agent-work-memory
-uv tool install --editable . --force
+Set-Location agent-work-memory
+uv tool install . --force
 awm --help
 ```
 
-## Set up your private memory
+`uv tool install` creates a persistent isolated environment and installs all
+packages declared in `pyproject.toml`. Do not manually install FastAPI, SQLite,
+Pydantic, PyYAML, or the other Python libraries.
+
+If PowerShell cannot find `awm`, add uv's tool executable directory to `PATH`,
+then open a new terminal:
 
 ```powershell
-awm setup C:\Users\user\Documents\AgentWorkMemoryVault `
-  --include-content `
-  --auto `
-  --every 5
+uv tool update-shell
+uv tool dir --bin
 ```
 
-`--include-content` is explicit because transcripts may contain source code,
-terminal output, internal paths, customer information, or secrets. Automatic
-sync retains evidence only and never invokes a model.
+### 3. Install only the agent integrations you use
 
-### Keep the Vault in a private Git repository
+No individual agent is mandatory for session storage, but you need at least one
+session source to collect useful records. Wiki distillation additionally needs
+one ready curator runtime.
 
-The application and personal memory are intentionally separate repositories:
+| Integration | Needed for | Required? |
+| --- | --- | --- |
+| ChatGPT desktop app with Codex, or Codex CLI | Codex sessions and recommended remote curator | Optional |
+| Claude Code | Claude sessions and Claude curator | Optional |
+| Cursor | Cursor Composer sessions | Optional |
+| Ollama | fully local curator | Optional |
+| OpenSSH client | explicitly registered remote machines | Optional |
+| Obsidian | editing the Vault outside AWM's local viewer | Optional |
 
-- `agent-work-memory` contains the shareable AWM application.
-- your private repository contains the entire Markdown Vault, including
-  `inbox/agent-sessions`.
-- the local SQLite database, logs, locks, and Windows schedules stay outside
-  both repositories under `%LOCALAPPDATA%\AgentWorkMemory`.
+#### Codex curator and sessions
 
-To publish an existing configured Vault to an empty private repository:
+On Windows, the recommended route is the ChatGPT desktop app, which includes
+Codex:
 
 ```powershell
-awm vault publish https://github.com/YOUR-NAME/YOUR-PRIVATE-VAULT.git
+winget install --id 9PLM9XGG6VKS -s msstore
 ```
 
-On a new machine, install AWM and clone the private Vault during setup:
+Open it and sign in with the personal or workspace account whose data policy you
+intend to use. If you installed the standalone Codex CLI instead, authenticate
+it with:
 
 ```powershell
-awm setup C:\Users\YOUR-NAME\Documents\AgentWorkMemoryVault `
-  --vault-repo https://github.com/YOUR-NAME/YOUR-PRIVATE-VAULT.git `
-  --include-content
+codex login
+codex login status
 ```
 
-Use Git-backed Vault commands during normal work:
+AWM discovers either the installed desktop runtime or a `codex` executable on
+`PATH`. OpenAI documents the [desktop quickstart][codex-windows] and
+[authentication choices][codex-auth]. A ChatGPT sign-in follows that workspace's
+permissions and data controls; API-key sign-in follows the API organization's
+controls and billing.
+
+#### Claude Code curator and sessions
+
+Native Claude Code on Windows requires Git for Windows and Node.js 18 or newer:
 
 ```powershell
-awm vault status
-awm vault sync
-awm vault push --message "Update personal memory"
-awm vault pull
+winget install --id OpenJS.NodeJS.LTS -e --source winget
+npm install -g @anthropic-ai/claude-code
+claude
+claude doctor
 ```
 
-`awm vault sync` commits all Vault changes, pulls with rebase, and pushes
-without force. Keep the repository private: retained session pages can contain
-source code, internal paths, customer information, credentials, and other
-sensitive material.
+Complete the account sign-in shown by `claude`. See Anthropic's
+[Claude Code setup guide][claude-code] for native Windows and WSL options.
 
-## Daily use
+#### Local Ollama curator
+
+Install Ollama using its [official Windows installer][ollama-windows], start it,
+and pull a model before asking AWM to use it:
 
 ```powershell
-awm sync --from codex --from claude --from cursor --include-content
+ollama pull qwen3:8b
+```
+
+AWM accepts Ollama only through a loopback HTTP endpoint. It does not give the
+local model shell or direct filesystem access.
+
+#### Cursor sessions
+
+Install and run [Cursor][cursor-install] normally. AWM reads Cursor Composer's
+local SQLite store; there is no Cursor plugin to install. Codex sessions created
+through the Cursor Codex extension remain Codex sessions, so AWM does not import
+them twice.
+
+### 4. Initialize the private Vault
+
+Choose a private directory that is not inside this application checkout:
+
+```powershell
+$vault = Join-Path $HOME 'Documents\AgentWorkMemoryVault'
+awm setup $vault --include-content --auto --every 5
+```
+
+This command:
+
+1. creates the Markdown Vault;
+2. collects Codex, Claude, and Cursor records found under your user profile;
+3. retains transcript bodies because `--include-content` was explicit; and
+4. installs the Windows `AWM Sync` task every five minutes.
+
+Without `--include-content`, AWM collects metadata only. Transcript bodies can
+contain source code, terminal output, internal paths, customer information, and
+secrets. Automatic sync stores evidence locally and **never invokes a model**.
+
+Verify the installation:
+
+```powershell
+awm doctor --runtimes
+awm auto status
 awm sessions
-awm search "why we chose sqlite"
 awm serve
 ```
 
-The viewer binds only to `127.0.0.1` and provides four working surfaces:
-
-- **Today** — retained sessions, durable Wiki pages, and pending distillation
-- **Sessions** — evidence from Codex, Claude, Cursor, imports, and manual notes
-- **Knowledge** — durable Markdown promoted from selected evidence
-- **Activity** — running work, next scheduled work, receipts, and logs
+The viewer opens at `http://127.0.0.1:3928` and binds only to loopback.
 
 ## Distill sessions into the Wiki
 
+First test a small manual run. Remote curator access to selected transcript
+bodies must be explicit:
+
 ```powershell
-awm distill --pending --limit 3 `
+awm distill --pending --limit 1 `
   --using codex `
   --allow-remote-content
 ```
 
-Automatic distillation is separate and opt-in:
+For Claude, replace `codex` with `claude`. For local Ollama:
+
+```powershell
+awm distill --pending --limit 1 `
+  --using ollama `
+  --model qwen3:8b `
+  --allow-local-content
+```
+
+After a manual run succeeds, automatic distillation can be installed separately:
 
 ```powershell
 awm auto-distill install `
@@ -103,46 +217,218 @@ awm auto-distill install `
   --allow-remote-content
 ```
 
-## SSH sources
-
-Only explicitly registered SSH targets are read:
+The standing grant is bounded by time and reserved-session count. A curator
+attempt consumes its reservation even when the model output later fails
+validation. Inspect or remove it with:
 
 ```powershell
-awm remote add ovion-dev-157
-awm remote list
-awm remote sync ovion-dev-157 --include-content
+awm auto-distill status
+awm auto-distill run
+awm auto-distill remove
 ```
 
-AWM uses existing OpenSSH configuration and keys, reads bounded transcript
-manifests, and does not write to remote machines.
+## Collect from SSH machines
 
-## Cursor records
+SSH collection is optional. The local machine needs the Windows OpenSSH client.
+Check it first:
 
-Local sync reads Cursor Composer sessions from Cursor's local SQLite store,
-including conversations attached to local, WSL, and SSH workspaces. Codex used
-through the Cursor Codex extension still writes the standard `.codex` session
-store and is collected by the `codex` provider, so AWM does not duplicate it as
-a Cursor Composer session. Claude tools that write the standard `.claude`
-store follow the same rule.
+```powershell
+ssh -V
+Get-WindowsCapability -Online | Where-Object Name -Like 'OpenSSH.Client*'
+```
 
-## Local data
+If it is missing, run PowerShell as Administrator and install only the client:
 
-- Private runtime state: `%LOCALAPPDATA%\AgentWorkMemory`
-- Durable Markdown: the Vault selected during `awm setup`
-- Windows schedules: `AWM Sync` and `AWM Auto Distill`
-- Python package: `agentworkmemory`
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+```
 
-The Vault is ordinary Markdown and can be opened directly in Obsidian. Runtime
-state may contain transcript bodies and should only be backed up to encrypted
-storage.
+The remote host must have `python3`, an existing trusted `known_hosts` entry,
+and non-interactive key authentication. Confirm that before registering it:
 
-See the [full user guide](docs/agent-work-memory-user-guide.md) for privacy,
-runtime, import, recovery, and automation details.
+```powershell
+ssh agent-box python3 --version
+awm remote add agent-box
+awm remote status agent-box
+awm remote sync agent-box --include-content
+```
 
-## Fork structure
+Use an alias from `~/.ssh/config` or `user@host`. AWM uses OpenSSH batch mode,
+reads only bounded Codex and Claude transcript manifests, and does not write to
+the remote machine. See Microsoft's [OpenSSH client instructions][openssh].
 
-`src/agentworkmemory/` is the active AWM product. The upstream
-`src/codealmanac/` tree remains in the checkout as unshipped reference source
-for comparing and syncing the original project.
+## Keep the Vault in a private Git repository
+
+Git is already a base prerequisite. Configure a commit identity once if this is
+a new machine:
+
+```powershell
+git config --global user.name 'Your Name'
+git config --global user.email 'you@example.com'
+```
+
+Create an empty **private** repository, then publish the configured Vault:
+
+```powershell
+awm vault publish https://github.com/YOUR-NAME/YOUR-PRIVATE-VAULT.git
+```
+
+On another machine, install AWM first and clone the Vault during setup:
+
+```powershell
+awm setup "$HOME\Documents\AgentWorkMemoryVault" `
+  --vault-repo https://github.com/YOUR-NAME/YOUR-PRIVATE-VAULT.git `
+  --include-content
+```
+
+Normal Git-backed Vault commands are:
+
+```powershell
+awm vault status
+awm vault sync
+awm vault push --message 'Update personal memory'
+awm vault pull
+```
+
+`awm vault sync` commits all Vault changes, pulls with rebase, and pushes without
+force. Keep the repository private because `inbox/agent-sessions` can contain
+complete transcript evidence.
+
+## Daily use
+
+```powershell
+awm sync --from codex --from claude --from cursor --include-content
+awm sessions
+awm search 'why we chose sqlite'
+awm serve
+```
+
+The viewer provides four local surfaces:
+
+- **Today**: retained sessions, Wiki pages, and pending distillation;
+- **Sessions**: evidence from agents, imports, SSH, and manual notes;
+- **Knowledge**: durable Markdown promoted from selected evidence; and
+- **Activity**: running work, scheduled work, receipts, and logs.
+
+The Vault is ordinary Markdown. [Obsidian][obsidian] is optional; open the Vault
+folder and then `Home.md`. Do not manually edit generated `Home.md` or `_index.md`
+files.
+
+## Update or uninstall
+
+Update the source checkout and reinstall the isolated tool:
+
+```powershell
+Set-Location C:\path\to\agent-work-memory
+git pull --ff-only
+uv tool install . --force
+awm doctor --runtimes
+```
+
+Remove scheduled work before uninstalling the command:
+
+```powershell
+awm auto-distill remove
+awm auto remove
+uv tool uninstall agent-work-memory
+```
+
+Uninstalling the tool does not delete the configured Vault or
+`%LOCALAPPDATA%\AgentWorkMemory`.
+
+## Troubleshooting
+
+### `awm` is not recognized
+
+```powershell
+uv tool update-shell
+uv tool dir --bin
+uv tool list
+```
+
+Open a new PowerShell after updating `PATH`.
+
+### A curator is unavailable
+
+```powershell
+awm runtimes
+awm doctor --runtimes
+```
+
+For Codex, confirm the intended account with `codex login status` when the CLI
+is on `PATH`. For Claude, run `claude doctor`. For Ollama, start the application
+and confirm that `ollama list` shows the requested model.
+
+### Automatic sync is unavailable
+
+Windows Task Scheduler provides `AWM Sync` and `AWM Auto Distill`. Automatic
+scheduling is not implemented on macOS or Linux; run `awm sync` and `awm
+auto-distill run` from your own scheduler there.
+
+On Windows, inspect the registered tasks and AWM status:
+
+```powershell
+Get-ScheduledTask -TaskName 'AWM Sync','AWM Auto Distill' -ErrorAction SilentlyContinue
+awm auto status
+awm auto-distill status
+```
+
+Always install AWM with `uv tool install`. AWM validates that Windows background
+tasks use a real GUI-subsystem Python runtime and refuses console-backed launchers
+that would flash a terminal window.
+
+## Contributor setup
+
+Normal AWM users can stop above. Contributors need the locked development
+environment:
+
+```powershell
+git clone https://github.com/TaeeunKil/agent-work-memory.git
+Set-Location agent-work-memory
+uv sync --locked
+uv run awm --help
+```
+
+Python test and lint dependencies come from the `dev` dependency group. Unless
+you also chose Claude Code, contributors use Node.js only for the JavaScript
+syntax gate; this repository itself has no npm package installation step.
+Install Node.js LTS if `node` is unavailable:
+
+```powershell
+winget install --id OpenJS.NodeJS.LTS -e --source winget
+```
+
+Run the repository gates:
+
+```powershell
+uv run pytest
+uv run ruff check src/agentworkmemory tests
+node --check src/agentworkmemory/viewer/assets/app.js
+```
+
+The active product is under `src/agentworkmemory/`. The upstream
+`src/codealmanac/` tree is unshipped reference source.
+
+## What is not required
+
+AWM itself does not require Docker, WSL, npm packages, a separate database
+server, a browser extension, an Obsidian plugin, or one installation per
+project. The optional Claude Code installation above is the only documented npm
+use. AWM is one local application that collects the configured user's agent
+records across workspaces.
+
+See the [full user guide](docs/agent-work-memory-user-guide.md) for imports,
+recovery, privacy boundaries, and detailed workflows.
 
 License: Apache-2.0.
+
+[git]: https://git-scm.com/install/windows.html
+[uv-install]: https://docs.astral.sh/uv/getting-started/installation/
+[uv-python]: https://docs.astral.sh/uv/guides/install-python/
+[codex-windows]: https://learn.chatgpt.com/docs/quickstart?setup=app
+[codex-auth]: https://learn.chatgpt.com/docs/auth
+[claude-code]: https://docs.anthropic.com/en/docs/claude-code/getting-started
+[ollama-windows]: https://docs.ollama.com/windows
+[cursor-install]: https://docs.cursor.com/get-started/installation
+[openssh]: https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse
+[obsidian]: https://obsidian.md/download
