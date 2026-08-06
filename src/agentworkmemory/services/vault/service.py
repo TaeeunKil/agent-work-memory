@@ -366,7 +366,14 @@ def preserve_existing_frontmatter(original: str, current: str) -> str:
     original_metadata, _ = split_frontmatter(original)
     if not original_metadata:
         return current
-    current_metadata, body = split_frontmatter(current)
+    try:
+        current_metadata, body = split_frontmatter(current)
+    except yaml.YAMLError:
+        match = FRONTMATTER.match(current)
+        if match is None:
+            raise
+        current_metadata = {}
+        body = current[match.end() :]
     merged = dict(original_metadata)
     merged.update(current_metadata)
     for key in ("short_title_ko", "short_title_en"):

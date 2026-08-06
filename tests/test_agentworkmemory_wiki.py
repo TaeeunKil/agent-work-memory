@@ -186,6 +186,54 @@ Curator body.
     assert "Curator body." in repaired
 
 
+def test_curator_repairs_malformed_existing_frontmatter_before_validation(
+    tmp_path: Path,
+):
+    app = wiki_app(tmp_path)
+    vault = app.vault.initialize(tmp_path / "vault")
+    canonical = vault / "decisions" / "malformed-metadata.md"
+    canonical.write_text(
+        """---
+short_title_ko: 안정 메타데이터
+short_title_en: Stable metadata
+language: en
+sources:
+  - session_id: ses_original
+---
+# Stable metadata
+""",
+        encoding="utf-8",
+    )
+
+    with app.vault.curator_workspace() as (workspace, snapshot, _):
+        target = workspace / "decisions" / "malformed-metadata.md"
+        target.write_text(
+            """---
+short_title_en: Revised metadata
+sources:
+  - session_id: ses_one
+    type: conversation
+  - session_id: ses_two
+      - session_id: ses_three
+---
+# Revised metadata
+
+Curator body survives malformed metadata.
+""",
+            encoding="utf-8",
+        )
+
+        preserved = app.vault.preserve_curator_frontmatter(snapshot)
+        changed = app.vault.validate_distill_changes(snapshot)
+        repaired = target.read_text(encoding="utf-8")
+
+    assert preserved == (Path("decisions/malformed-metadata.md"),)
+    assert changed == preserved
+    assert "short_title_ko: 안정 메타데이터" in repaired
+    assert "short_title_en: Stable metadata" in repaired
+    assert "Curator body survives malformed metadata." in repaired
+
+
 def test_curator_frontmatter_preservation_leaves_deletion_for_validation(
     tmp_path: Path,
 ):
