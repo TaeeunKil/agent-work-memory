@@ -6,12 +6,19 @@ from agentworkmemory.integrations.transcripts.models import (
     DiscoveredAgentSession,
     TranscriptReadResult,
 )
-from agentworkmemory.integrations.transcripts.normalize import normalize_transcript_line
+from agentworkmemory.integrations.transcripts.normalize import (
+    CODEX_NORMALIZER_VERSION,
+    normalize_transcript_line,
+)
 from agentworkmemory.services.sessions.models import (
     AgentEvent,
+    AgentEventKind,
     AgentProvider,
     AgentProviderId,
+    SessionState,
 )
+
+CLAUDE_NORMALIZER_VERSION = "claude-v1"
 
 
 class CodexTranscriptCollector:
@@ -21,22 +28,34 @@ class CodexTranscriptCollector:
         self.sessions_dir = sessions_dir
 
     def discover(self, home: Path) -> tuple[DiscoveredAgentSession, ...]:
-        root = self.sessions_dir or home / ".codex" / "sessions"
-        discovered: list[DiscoveredAgentSession] = []
-        for path in jsonl_files(root):
-            meta = codex_metadata(path)
-            if meta is None or meta[2] == "subagent":
-                continue
-            session_id, cwd, _ = meta
-            discovered.append(
-                discovered_session(
+        roots = (
+            ((self.sessions_dir, SessionState.OPEN),)
+            if self.sessions_dir is not None
+            else (
+                (home / ".codex" / "sessions", SessionState.OPEN),
+                (home / ".codex" / "archived_sessions", SessionState.COMPLETE),
+            )
+        )
+        discovered: dict[str, DiscoveredAgentSession] = {}
+        for root, state in roots:
+            for path in jsonl_files(root):
+                meta = codex_metadata(path)
+                if meta is None or meta[2] == "subagent":
+                    continue
+                session_id, cwd, _ = meta
+                candidate = discovered_session(
                     provider=self.provider,
                     provider_session_id=session_id,
                     cwd=cwd,
                     path=path,
+                    state=state,
+                    normalizer_version=CODEX_NORMALIZER_VERSION,
+                    source_identity=f"codex:{session_id}",
                 )
-            )
-        return tuple(discovered)
+                existing = discovered.get(session_id)
+                if existing is None or candidate.state is SessionState.OPEN:
+                    discovered[session_id] = candidate
+        return tuple(discovered.values())
 
     def read(
         self,
@@ -74,6 +93,7 @@ class ClaudeTranscriptCollector:
                     provider_session_id=session_id,
                     cwd=cwd,
                     path=path,
+                    normalizer_version=CLAUDE_NORMALIZER_VERSION,
                 )
             )
         return tuple(discovered)
@@ -98,12 +118,17 @@ def read_transcript(
     work_session_id: str,
     after_line: int,
 ) -> TranscriptReadResult:
-    events: list[AgentEvent] = []
+    candidates: list[tuple[str, AgentEvent]] = []
     last_line = 0
+    context_after_line = (
+        max(0, after_line - 8)
+        if session.provider == AgentProvider.CODEX
+        else after_line
+    )
     with session.source_path.open("r", encoding="utf-8") as file:
         for line_number, raw in enumerate(file, start=1):
             last_line = line_number
-            if line_number <= after_line:
+            if line_number <= context_after_line:
                 continue
             parsed = parse_object(raw)
             if parsed is None:
@@ -115,9 +140,15 @@ def read_transcript(
                 parsed,
             )
             if event is not None:
-                events.append(event)
+                candidates.append((str(parsed.get("type") or ""), event))
+    normalized = (
+        deduplicate_codex_messages(candidates)
+        if session.provider == AgentProvider.CODEX
+        else tuple(event for _, event in candidates)
+    )
+    events = tuple(event for event in normalized if event.source_line > after_line)
     return TranscriptReadResult(
-        events=tuple(events),
+        events=events,
         last_line=last_line,
         size_bytes=session.source_path.stat().st_size,
     )
@@ -129,6 +160,9 @@ def discovered_session(
     provider_session_id: str,
     cwd: str,
     path: Path,
+    state: SessionState = SessionState.OPEN,
+    normalizer_version: str = "legacy",
+    source_identity: str | None = None,
 ) -> DiscoveredAgentSession:
     stat = path.stat()
     return DiscoveredAgentSession(
@@ -138,7 +172,44 @@ def discovered_session(
         source_path=path.resolve(),
         modified_at=datetime.fromtimestamp(stat.st_mtime, UTC),
         size_bytes=stat.st_size,
+        ended_at=(
+            datetime.fromtimestamp(stat.st_mtime, UTC)
+            if state is SessionState.COMPLETE
+            else None
+        ),
+        state=state,
+        source_identity=source_identity,
+        normalizer_version=normalizer_version,
     )
+
+
+def deduplicate_codex_messages(
+    candidates: list[tuple[str, AgentEvent]],
+) -> tuple[AgentEvent, ...]:
+    response_lines: dict[tuple[str | None, str], list[int]] = {}
+    for record_type, event in candidates:
+        if (
+            record_type != "response_item"
+            or event.kind is not AgentEventKind.MESSAGE
+        ):
+            continue
+        key = (event.role, event.content)
+        response_lines.setdefault(key, []).append(event.source_line)
+    retained: list[AgentEvent] = []
+    for record_type, event in candidates:
+        key = (event.role, event.content)
+        nearby_response = any(
+            abs(event.source_line - line) <= 8
+            for line in response_lines.get(key, ())
+        )
+        if (
+            record_type == "event_msg"
+            and event.kind is AgentEventKind.MESSAGE
+            and nearby_response
+        ):
+            continue
+        retained.append(event)
+    return tuple(retained)
 
 
 def jsonl_files(root: Path) -> tuple[Path, ...]:

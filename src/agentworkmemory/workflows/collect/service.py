@@ -64,35 +64,56 @@ class CollectAgentRecordsWorkflow:
                     modified_at=discovered.modified_at,
                     started_at=discovered.started_at,
                     title=discovered.title,
+                    ended_at=discovered.ended_at,
+                    state=discovered.state,
                 )
                 session_ids.append(session.session_id)
                 if request.include_content:
                     source_id = stable_source_id(discovered)
                     content_path = discovered.content_path or discovered.source_path
                     cursor = self.sessions.cursor_for(source_id)
-                    after_line = 0 if cursor is None else cursor.last_line
-                    if cursor is not None and discovered.size_bytes < cursor.size_bytes:
-                        after_line = 0
+                    rebuild = (
+                        cursor is None and session.content_captured
+                    ) or (
+                        cursor is not None
+                        and (
+                            cursor.normalizer_version
+                            != discovered.normalizer_version
+                            or discovered.size_bytes < cursor.size_bytes
+                        )
+                    )
+                    after_line = (
+                        0 if cursor is None or rebuild else cursor.last_line
+                    )
                     read = collector.read(
                         discovered,
                         work_session_id=session.session_id,
                         after_line=after_line,
                     )
-                    inserted = self.sessions.append_events(
-                        session.session_id,
-                        read.events,
-                        CollectorCursor(
-                            source_id=source_id,
-                            provider=provider,
-                            source_path=content_path,
-                            last_line=read.last_line,
-                            size_bytes=read.size_bytes,
-                            updated_at=discovered.modified_at,
-                        ),
+                    updated_cursor = CollectorCursor(
+                        source_id=source_id,
+                        provider=provider,
+                        source_path=content_path,
+                        last_line=read.last_line,
+                        size_bytes=read.size_bytes,
+                        updated_at=discovered.modified_at,
+                        normalizer_version=discovered.normalizer_version,
                     )
+                    if rebuild:
+                        inserted = self.sessions.replace_events(
+                            session.session_id,
+                            read.events,
+                            updated_cursor,
+                        )
+                    else:
+                        inserted = self.sessions.append_events(
+                            session.session_id,
+                            read.events,
+                            updated_cursor,
+                        )
                     events_added += inserted
                     provider_events += inserted
-                    if inserted > 0 or not session.content_captured:
+                    if rebuild or inserted > 0 or not session.content_captured:
                         updated_count += 1
                 self.vault.refresh_session(
                     self.sessions.get(session.session_id),
@@ -120,7 +141,10 @@ class CollectAgentRecordsWorkflow:
 
 
 def stable_source_id(discovered: DiscoveredAgentSession) -> str:
-    content_path = discovered.content_path or discovered.source_path
+    content_path = (
+        discovered.source_identity
+        or str(discovered.content_path or discovered.source_path)
+    )
     identity = (
         f"{discovered.provider}\0"
         f"{discovered.provider_session_id}\0{content_path}"

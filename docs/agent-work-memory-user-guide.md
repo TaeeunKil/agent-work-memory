@@ -112,6 +112,12 @@ imports/repository-almanacs/   isolated legacy Wiki review
 ```
 
 Synchronization fills `inbox/agent-sessions` and the private search database.
+Large retained sessions keep their normal session page as an index and store
+the record in deterministic `part-001.md`, `part-002.md`, and later files. Each
+part is bounded below AWM's Vault publication limit. `awm vault publish`,
+`push`, and `sync` refuse to stage any remaining file above 48 MiB and tell you
+to refresh the owning session first.
+
 It does not create pages in `projects`, `decisions`, `problems`, `procedures`,
 `systems`, or `unfinished`. Those are durable knowledge and change only when
 you explicitly distill selected sessions. `awm doctor` reports how many

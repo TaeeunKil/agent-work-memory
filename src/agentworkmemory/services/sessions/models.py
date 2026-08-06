@@ -101,6 +101,7 @@ class CollectorCursor(AgentWorkMemoryModel):
     last_line: int
     size_bytes: int
     updated_at: datetime
+    normalizer_version: str = "legacy"
 
 
 class SearchResult(AgentWorkMemoryModel):

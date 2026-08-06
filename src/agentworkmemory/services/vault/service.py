@@ -12,6 +12,10 @@ import yaml
 from agentworkmemory.integrations.processes import hidden_process_creation_flags
 from agentworkmemory.services.frontmatter import FRONTMATTER, split_frontmatter
 from agentworkmemory.services.sessions.models import AgentEvent, AgentSession
+from agentworkmemory.services.vault.session_records import (
+    SessionRecordBundle,
+    render_session_record,
+)
 from agentworkmemory.services.vault.snapshot import VaultSnapshot, read_vault_bytes
 from agentworkmemory.settings import AgentWorkMemoryConfig, save_config
 
@@ -84,7 +88,8 @@ class VaultService:
         ).resolve()
         ensure_inside(vault_path, target)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(render_session_page(session, events), encoding="utf-8")
+        record = render_session_record(session, events)
+        replace_session_record(vault_path, target, record)
         return target
 
     def markdown_files(self) -> tuple[Path, ...]:
@@ -247,83 +252,44 @@ def windows_account_name() -> str:
     return f"{domain}\\{username}" if domain else username
 
 
-def render_session_page(
-    session: AgentSession,
-    events: tuple[AgentEvent, ...],
-) -> str:
-    frontmatter = {
-        "id": session.session_id,
-        "title": session.title,
-        "tags": ["agent-session", session.provider],
-        "sources": [
-            {
-                "id": f"{session.provider}-session",
-                "type": "conversation",
-                "session_id": session.provider_session_id,
-            }
-        ],
-    }
-    lines = [
-        "---",
-        yaml.safe_dump(
-            frontmatter,
-            allow_unicode=True,
-            sort_keys=False,
-        ).rstrip(),
-        "---",
-        f"# {session.title}",
-        "",
-        f"- Agent: `{session.provider}`",
-        f"- Session: `{session.provider_session_id}`",
-        f"- State: `{session.state.value}`",
-        f"- Last observed: `{session.modified_at.isoformat()}`",
-    ]
-    if session.cwd is not None:
-        lines.append(f"- Workspace: `{session.cwd}`")
-    if session.distilled_at is not None:
-        lines.append(f"- Distilled: `{session.distilled_at.isoformat()}`")
-    if session.distill_runtime is not None:
-        lines.append(f"- Curator: `{session.distill_runtime}`")
-    lines.extend(("", "## Record", ""))
-    if not events:
-        lines.extend(
-            (
-                "Transcript content has not been imported.",
-                "",
-                "Run `awm collect --include-content` to retain local content.",
-            )
-        )
-    else:
-        for event in events:
-            lines.extend(render_event(event))
-    return "\n".join(lines).rstrip() + "\n"
+def replace_session_record(
+    vault_path: Path,
+    index_path: Path,
+    record: SessionRecordBundle,
+) -> None:
+    parts_dir = index_path.with_suffix("")
+    expected_parts: set[Path] = set()
+    if record.parts:
+        parts_dir.mkdir(parents=True, exist_ok=True)
+        for part in record.parts:
+            target = (parts_dir / part.filename).resolve()
+            ensure_inside(vault_path, target)
+            write_text_atomic(target, part.content)
+            expected_parts.add(target)
+    write_text_atomic(index_path, record.index_content)
+    remove_obsolete_session_parts(vault_path, parts_dir, expected_parts)
 
 
-def render_event(event: AgentEvent) -> tuple[str, ...]:
-    timestamp = (
-        f" · {event.occurred_at.isoformat()}" if event.occurred_at is not None else ""
-    )
-    fence = safe_fence(event.content)
-    return (
-        f"### {event.sequence}. {event.label}{timestamp}",
-        "",
-        f"{fence}text",
-        event.content,
-        fence,
-        "",
-    )
+def write_text_atomic(path: Path, content: str) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(content, encoding="utf-8")
+    temporary.replace(path)
 
 
-def safe_fence(content: str) -> str:
-    longest = 0
-    current = 0
-    for character in content:
-        if character == "`":
-            current += 1
-            longest = max(longest, current)
-        else:
-            current = 0
-    return "`" * max(3, longest + 1)
+def remove_obsolete_session_parts(
+    vault_path: Path,
+    parts_dir: Path,
+    expected: set[Path],
+) -> None:
+    if not parts_dir.is_dir() or parts_dir.is_symlink():
+        return
+    for path in parts_dir.glob("part-*.md"):
+        resolved = path.resolve()
+        ensure_inside(vault_path, resolved)
+        if resolved not in expected:
+            path.unlink()
+    if not any(parts_dir.iterdir()):
+        parts_dir.rmdir()
 
 
 def ensure_inside(root: Path, target: Path) -> None:

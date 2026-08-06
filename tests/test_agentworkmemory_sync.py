@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,7 +16,11 @@ from agentworkmemory.integrations.automation.windows import (
     windows_executable_subsystem,
 )
 from agentworkmemory.services.automation.models import AutoSyncSettings
-from agentworkmemory.services.sessions.models import AgentProvider
+from agentworkmemory.services.sessions.models import (
+    AgentEventKind,
+    AgentProvider,
+    SessionState,
+)
 from agentworkmemory.services.synchronization.models import SyncStatus
 from agentworkmemory.settings import AgentWorkMemoryConfig
 from agentworkmemory.workflows.sync import SyncAgentRecords
@@ -96,6 +101,166 @@ def test_sync_reports_coarse_progress(tmp_path: Path):
         "Refreshing search index.",
         "Synchronization complete: 1 session(s), 2 new event(s).",
     ]
+
+
+def test_sync_normalizes_modern_codex_records_and_omits_telemetry(tmp_path: Path):
+    app = sync_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    write_modern_codex_transcript(home, tmp_path / "project")
+
+    receipt = app.sync.run(
+        SyncAgentRecords(
+            providers=(AgentProvider.CODEX,),
+            home=home,
+            include_content=True,
+        )
+    )
+
+    assert receipt.events_added == 6
+    (session,) = app.sessions.list()
+    events = app.sessions.events(session.session_id)
+    assert tuple(event.kind for event in events) == (
+        AgentEventKind.MESSAGE,
+        AgentEventKind.MESSAGE,
+        AgentEventKind.TOOL_CALL,
+        AgentEventKind.TOOL_RESULT,
+        AgentEventKind.TOOL_CALL,
+        AgentEventKind.TOOL_RESULT,
+    )
+    assert [event.content for event in events].count("Keep this modern decision") == 1
+    rendered = "\n".join(event.content for event in events)
+    assert "encrypted-reasoning" not in rendered
+    assert "token_count" not in rendered
+    assert "turn_context" not in rendered
+    assert '"cmd":"pytest"' in rendered
+    assert "apply_patch" in rendered
+
+
+def test_sync_replays_events_when_normalizer_version_changes(tmp_path: Path):
+    app = sync_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    write_modern_codex_transcript(home, tmp_path / "project")
+    request = SyncAgentRecords(
+        providers=(AgentProvider.CODEX,),
+        home=home,
+        include_content=True,
+    )
+    app.sync.run(request)
+    (session,) = app.sessions.list()
+    with sqlite3.connect(app.sessions.store.database_path) as connection:
+        connection.execute(
+            "UPDATE collector_cursors SET normalizer_version = 'legacy'"
+        )
+        connection.execute(
+            """
+            INSERT INTO agent_events (
+              event_id, session_id, sequence, kind, role, label,
+              occurred_at, content, source_line, created_at
+            ) VALUES (
+              'evt_stale', ?, 999, 'raw', NULL, 'raw',
+              NULL, 'stale transport envelope', 999, ?
+            )
+            """,
+            (session.session_id, datetime.now(UTC).isoformat()),
+        )
+        connection.commit()
+
+    replay = app.sync.run(request)
+
+    assert replay.events_added == 6
+    events = app.sessions.events(session.session_id)
+    assert len(events) == 6
+    assert all(event.event_id != "evt_stale" for event in events)
+
+
+def test_sync_deduplicates_a_codex_message_across_incremental_reads(
+    tmp_path: Path,
+):
+    app = sync_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    transcript = home / ".codex/sessions/2026/08/06/incremental.jsonl"
+    transcript.parent.mkdir(parents=True)
+    records = (
+        {
+            "type": "session_meta",
+            "payload": {
+                "id": "incremental-codex-session",
+                "cwd": str(tmp_path / "project"),
+                "thread_source": "user",
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "One decision"}],
+            },
+        },
+    )
+    transcript.write_text(
+        "".join(json.dumps(record) + "\n" for record in records),
+        encoding="utf-8",
+    )
+    request = SyncAgentRecords(
+        providers=(AgentProvider.CODEX,),
+        home=home,
+        include_content=True,
+    )
+    first = app.sync.run(request)
+    with transcript.open("a", encoding="utf-8") as file:
+        file.write(
+            json.dumps(
+                {
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "user_message",
+                        "message": "One decision",
+                    },
+                }
+            )
+            + "\n"
+        )
+
+    second = app.sync.run(request)
+
+    assert first.events_added == 1
+    assert second.events_added == 0
+    (session,) = app.sessions.list()
+    assert [event.content for event in app.sessions.events(session.session_id)] == [
+        "One decision"
+    ]
+
+
+def test_sync_tracks_codex_archive_move_as_the_same_completed_session(
+    tmp_path: Path,
+):
+    app = sync_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    live = write_modern_codex_transcript(home, tmp_path / "project")
+    request = SyncAgentRecords(
+        providers=(AgentProvider.CODEX,),
+        home=home,
+        include_content=True,
+    )
+    app.sync.run(request)
+    (before,) = app.sessions.list()
+    archived = home / ".codex" / "archived_sessions" / live.name
+    archived.parent.mkdir(parents=True)
+    live.replace(archived)
+
+    app.sync.run(request)
+
+    (after,) = app.sessions.list()
+    assert after.session_id == before.session_id
+    assert after.source_path == archived.resolve()
+    assert after.state is SessionState.COMPLETE
+    assert after.ended_at == after.modified_at
+    assert len(app.sessions.events(after.session_id)) == 6
 
 
 def test_overlapping_sync_exits_without_collecting(
@@ -391,6 +556,103 @@ def write_codex_transcript(home: Path, workspace: Path) -> Path:
                         {"type": "output_text", "text": "Stored incrementally"}
                     ],
                 }
+            },
+        },
+    )
+    transcript.write_text(
+        "".join(json.dumps(line) + "\n" for line in lines),
+        encoding="utf-8",
+    )
+    return transcript
+
+
+def write_modern_codex_transcript(home: Path, workspace: Path) -> Path:
+    transcript = home / ".codex/sessions/2026/08/06/modern.jsonl"
+    transcript.parent.mkdir(parents=True)
+    lines = (
+        {
+            "type": "session_meta",
+            "timestamp": "2026-08-06T01:00:00Z",
+            "payload": {
+                "id": "modern-codex-session",
+                "cwd": str(workspace),
+                "thread_source": "user",
+            },
+        },
+        {
+            "type": "response_item",
+            "timestamp": "2026-08-06T01:01:00Z",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Keep this modern decision"}
+                ],
+            },
+        },
+        {
+            "type": "event_msg",
+            "timestamp": "2026-08-06T01:01:00Z",
+            "payload": {
+                "type": "user_message",
+                "message": "Keep this modern decision",
+            },
+        },
+        {
+            "type": "response_item",
+            "timestamp": "2026-08-06T01:02:00Z",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {"type": "output_text", "text": "Stored without telemetry"}
+                ],
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "reasoning",
+                "encrypted_content": "encrypted-reasoning",
+                "summary": [],
+            },
+        },
+        {
+            "type": "event_msg",
+            "payload": {"type": "token_count", "info": {"total": 9000}},
+        },
+        {
+            "type": "turn_context",
+            "payload": {"cwd": str(workspace), "summary": "turn_context"},
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "shell",
+                "arguments": '{"cmd":"pytest"}',
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "output": "12 passed",
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "name": "apply_patch",
+                "input": "apply_patch input",
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call_output",
+                "output": "apply_patch complete",
             },
         },
     )

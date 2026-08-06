@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS collector_cursors (
   source_path  TEXT NOT NULL,
   last_line    INTEGER NOT NULL,
   size_bytes   INTEGER NOT NULL,
-  updated_at   TEXT NOT NULL
+  updated_at   TEXT NOT NULL,
+  normalizer_version TEXT NOT NULL DEFAULT 'legacy'
 );
 
 CREATE TABLE IF NOT EXISTS distill_receipts (
@@ -103,6 +104,12 @@ def connect(path: Path) -> sqlite3.Connection:
     connection.executescript(SCHEMA)
     ensure_column(connection, "agent_sessions", "distilled_at", "TEXT")
     ensure_column(connection, "agent_sessions", "distill_runtime", "TEXT")
+    ensure_column(
+        connection,
+        "collector_cursors",
+        "normalizer_version",
+        "TEXT NOT NULL DEFAULT 'legacy'",
+    )
     ensure_column(
         connection,
         "distill_receipts",

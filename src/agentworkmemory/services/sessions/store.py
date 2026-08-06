@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from pathlib import Path
+from sqlite3 import Connection
 
 from agentworkmemory.database import open_database
 from agentworkmemory.services.sessions.models import (
@@ -67,36 +68,33 @@ class SessionsStore:
                 tuple(event_values(event) for event in events),
             )
             inserted = connection.total_changes - before
-            connection.execute(
-                """
-                INSERT INTO collector_cursors (
-                  source_id, provider, source_path, last_line, size_bytes,
-                  updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(source_id) DO UPDATE SET
-                  last_line = excluded.last_line,
-                  size_bytes = excluded.size_bytes,
-                  updated_at = excluded.updated_at
-                """,
-                (
-                    cursor.source_id,
-                    cursor.provider,
-                    str(cursor.source_path),
-                    cursor.last_line,
-                    cursor.size_bytes,
-                    cursor.updated_at.isoformat(),
-                ),
-            )
-            connection.execute(
-                """
-                UPDATE agent_sessions
-                SET content_captured = 1, updated_at = ?
-                WHERE session_id = ?
-                """,
-                (datetime.now(UTC).isoformat(), session_id),
-            )
+            finish_capture(connection, session_id, cursor)
             connection.commit()
         return inserted
+
+    def replace_events(
+        self,
+        session_id: str,
+        events: tuple[AgentEvent, ...],
+        cursor: CollectorCursor,
+    ) -> int:
+        with open_database(self.database_path) as connection:
+            connection.execute(
+                "DELETE FROM agent_events WHERE session_id = ?",
+                (session_id,),
+            )
+            connection.executemany(
+                """
+                INSERT INTO agent_events (
+                  event_id, session_id, sequence, kind, role, label,
+                  occurred_at, content, source_line, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                tuple(event_values(event) for event in events),
+            )
+            finish_capture(connection, session_id, cursor)
+            connection.commit()
+        return len(events)
 
     def get_session(self, session_id: str) -> AgentSession | None:
         with open_database(self.database_path) as connection:
@@ -105,6 +103,22 @@ class SessionsStore:
                 (session_id,),
             ).fetchone()
         return session_from_row(row) if row is not None else None
+
+    def sessions_for_provider_identity(
+        self,
+        provider: str,
+        provider_session_id: str,
+    ) -> tuple[AgentSession, ...]:
+        with open_database(self.database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM agent_sessions
+                WHERE provider = ? AND provider_session_id = ?
+                ORDER BY updated_at DESC, session_id
+                """,
+                (provider, provider_session_id),
+            ).fetchall()
+        return tuple(session_from_row(row) for row in rows)
 
     def list_sessions(self) -> tuple[AgentSession, ...]:
         with open_database(self.database_path) as connection:
@@ -158,6 +172,7 @@ class SessionsStore:
             last_line=row["last_line"],
             size_bytes=row["size_bytes"],
             updated_at=datetime.fromisoformat(row["updated_at"]),
+            normalizer_version=row["normalizer_version"],
         )
 
     def mark_distilled(
@@ -200,6 +215,44 @@ class SessionsStore:
                 ),
             )
             connection.commit()
+
+
+def finish_capture(
+    connection: Connection,
+    session_id: str,
+    cursor: CollectorCursor,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO collector_cursors (
+          source_id, provider, source_path, last_line, size_bytes,
+          updated_at, normalizer_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source_id) DO UPDATE SET
+          source_path = excluded.source_path,
+          last_line = excluded.last_line,
+          size_bytes = excluded.size_bytes,
+          updated_at = excluded.updated_at,
+          normalizer_version = excluded.normalizer_version
+        """,
+        (
+            cursor.source_id,
+            cursor.provider,
+            str(cursor.source_path),
+            cursor.last_line,
+            cursor.size_bytes,
+            cursor.updated_at.isoformat(),
+            cursor.normalizer_version,
+        ),
+    )
+    connection.execute(
+        """
+        UPDATE agent_sessions
+        SET content_captured = 1, updated_at = ?
+        WHERE session_id = ?
+        """,
+        (datetime.now(UTC).isoformat(), session_id),
+    )
 
 
 def session_values(session: AgentSession) -> tuple[object, ...]:

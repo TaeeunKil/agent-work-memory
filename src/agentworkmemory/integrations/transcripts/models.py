@@ -3,7 +3,11 @@ from pathlib import Path
 from typing import Protocol
 
 from agentworkmemory.core import AgentWorkMemoryModel
-from agentworkmemory.services.sessions.models import AgentEvent, AgentProviderId
+from agentworkmemory.services.sessions.models import (
+    AgentEvent,
+    AgentProviderId,
+    SessionState,
+)
 
 
 class DiscoveredAgentSession(AgentWorkMemoryModel):
@@ -16,6 +20,10 @@ class DiscoveredAgentSession(AgentWorkMemoryModel):
     modified_at: datetime
     size_bytes: int
     started_at: datetime | None = None
+    ended_at: datetime | None = None
+    state: SessionState = SessionState.OPEN
+    source_identity: str | None = None
+    normalizer_version: str = "legacy"
 
 
 class TranscriptReadResult(AgentWorkMemoryModel):

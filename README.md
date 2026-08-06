@@ -292,7 +292,10 @@ awm vault pull
 
 `awm vault sync` commits all Vault changes, pulls with rebase, and pushes without
 force. Keep the repository private because `inbox/agent-sessions` can contain
-complete transcript evidence.
+complete transcript evidence. AWM keeps a stable session index and automatically
+splits large retained sessions into numbered Markdown parts. Publication stops
+before staging if any Vault file still exceeds the 48 MiB safety limit; run a
+content sync to rebuild that session record before retrying.
 
 ## Daily use
 

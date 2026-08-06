@@ -6,6 +6,29 @@ from agentworkmemory.services.sessions.models import AgentEvent, AgentEventKind
 from agentworkmemory.services.sessions.service import stable_event_id
 
 MAX_EVENT_CONTENT_CHARS = 64_000
+MAX_RAW_EVENT_CONTENT_CHARS = 4_000
+CODEX_NORMALIZER_VERSION = "codex-v2"
+
+CODEX_IGNORED_RECORD_TYPES = frozenset(
+    {
+        "compacted",
+        "turn_context",
+        "world_state",
+    }
+)
+CODEX_IGNORED_PAYLOAD_TYPES = frozenset(
+    {
+        "agent_reasoning",
+        "context_compacted",
+        "reasoning",
+        "task_complete",
+        "task_started",
+        "thread_rolled_back",
+        "thread_settings_applied",
+        "token_count",
+        "turn_aborted",
+    }
+)
 
 
 def normalize_transcript_line(
@@ -25,7 +48,12 @@ def normalize_transcript_line(
     if normalized is None:
         return None
     kind, role, label, content = normalized
-    bounded = content[:MAX_EVENT_CONTENT_CHARS]
+    content_limit = (
+        MAX_RAW_EVENT_CONTENT_CHARS
+        if kind is AgentEventKind.RAW
+        else MAX_EVENT_CONTENT_CHARS
+    )
+    bounded = content[:content_limit]
     now = datetime.now(UTC)
     return AgentEvent(
         event_id=stable_event_id(
@@ -49,20 +77,93 @@ def normalize_transcript_line(
 def normalize_codex(
     parsed: dict[str, object],
 ) -> tuple[AgentEventKind, str | None, str, str] | None:
+    record_type = str(parsed.get("type") or "")
+    if record_type in CODEX_IGNORED_RECORD_TYPES:
+        return None
     payload = object_value(parsed.get("payload"))
     if payload is not None:
         if is_codex_meta(payload):
             return None
+        payload_type = str(payload.get("type") or "")
+        if payload_type in CODEX_IGNORED_PAYLOAD_TYPES:
+            return None
+        if record_type == "response_item":
+            return normalize_codex_response_item(payload)
         message = payload.get("message")
         if isinstance(message, str) and message.strip():
-            return AgentEventKind.EVENT, None, "event", message.strip()
+            role = codex_message_role(payload_type)
+            return (
+                AgentEventKind.MESSAGE,
+                role,
+                role or payload_type or "event",
+                message.strip(),
+            )
+        text = payload.get("text")
+        role = role_from_type(payload_type)
+        if isinstance(text, str) and text.strip() and role is not None:
+            return AgentEventKind.MESSAGE, role, role, text.strip()
         item = object_value(payload.get("item"))
         if item is not None:
             return normalize_item(item)
     message = object_value(parsed.get("message"))
     if message is not None:
         return normalize_message(message, str(parsed.get("type") or "message"))
-    return normalize_unknown(parsed)
+    return normalize_unknown_codex(record_type, payload)
+
+
+def normalize_codex_response_item(
+    item: dict[str, object],
+) -> tuple[AgentEventKind, str | None, str, str] | None:
+    type_text = str(item.get("type") or "item")
+    if type_text in CODEX_IGNORED_PAYLOAD_TYPES:
+        return None
+    role_value = item.get("role")
+    role = role_value if isinstance(role_value, str) else None
+    name_value = item.get("name")
+    name = name_value if isinstance(name_value, str) else None
+    if type_text in {"custom_tool_call", "tool_search_call", "web_search_call"}:
+        value = item.get("input", item.get("arguments", item.get("action")))
+        return (
+            AgentEventKind.TOOL_CALL,
+            role,
+            f"tool call: {name or type_text.removesuffix('_call')}",
+            render_value(value),
+        )
+    if type_text in {"custom_tool_call_output", "tool_search_output"}:
+        value = item.get("output", item.get("tools"))
+        return AgentEventKind.TOOL_RESULT, role, "tool result", render_value(value)
+    return normalize_item(item)
+
+
+def codex_message_role(payload_type: str) -> str | None:
+    return role_from_type(payload_type) or (
+        "assistant" if payload_type == "agent_message" else None
+    )
+
+
+def role_from_type(payload_type: str) -> str | None:
+    if payload_type.startswith("user_"):
+        return "user"
+    if payload_type.startswith("agent_"):
+        return "assistant"
+    return None
+
+
+def normalize_unknown_codex(
+    record_type: str,
+    payload: dict[str, object] | None,
+) -> tuple[AgentEventKind, str | None, str, str] | None:
+    if payload is None:
+        return None
+    evidence = {
+        key: payload[key]
+        for key in ("message", "text", "content", "arguments", "input", "output")
+        if payload.get(key) is not None
+    }
+    if not evidence:
+        return None
+    payload_type = str(payload.get("type") or record_type or "raw")
+    return AgentEventKind.RAW, None, payload_type, render_value(evidence)
 
 
 def normalize_claude(

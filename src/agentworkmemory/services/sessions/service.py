@@ -34,10 +34,25 @@ class SessionsService:
         started_at: datetime | None = None,
         title: str | None = None,
         ended_at: datetime | None = None,
+        state: SessionState = SessionState.OPEN,
     ) -> AgentSession:
         now = datetime.now(UTC)
         session_id = stable_session_id(provider, provider_session_id, source_path)
         existing = self.store.get_session(session_id)
+        if existing is None:
+            relocated = tuple(
+                candidate
+                for candidate in self.store.sessions_for_provider_identity(
+                    provider,
+                    provider_session_id,
+                )
+                if candidate.source_path is None
+                or candidate.source_path == source_path
+                or not candidate.source_path.exists()
+            )
+            if len(relocated) == 1:
+                existing = relocated[0]
+                session_id = existing.session_id
         return self.store.remember_session(
             AgentSession(
                 session_id=session_id,
@@ -61,7 +76,7 @@ class SessionsService:
                     else (existing.ended_at if existing is not None else None)
                 ),
                 modified_at=modified_at,
-                state=existing.state if existing is not None else SessionState.OPEN,
+                state=state,
                 content_captured=(
                     existing.content_captured if existing is not None else False
                 ),
@@ -147,6 +162,15 @@ class SessionsService:
         cursor: CollectorCursor,
     ) -> int:
         return self.store.append_events(session_id, events, cursor)
+
+    def replace_events(
+        self,
+        session_id: str,
+        events: tuple[AgentEvent, ...],
+        cursor: CollectorCursor,
+    ) -> int:
+        self.get(session_id)
+        return self.store.replace_events(session_id, events, cursor)
 
     def get(self, session_id: str) -> AgentSession:
         session = self.store.get_session(session_id)

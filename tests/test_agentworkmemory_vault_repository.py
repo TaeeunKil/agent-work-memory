@@ -116,6 +116,25 @@ def test_vault_cli_status_and_sync(tmp_path: Path, capsys):
     assert "Committed, pulled, and pushed" in output
 
 
+def test_vault_push_refuses_an_oversized_file_before_staging(
+    tmp_path: Path,
+    monkeypatch,
+):
+    adapter = FakeVaultRepositoryAdapter()
+    app = repository_app(tmp_path, adapter)
+    vault = app.vault.initialize(tmp_path / "vault")
+    (vault / "inbox" / "agent-sessions" / "oversized.md").write_bytes(b"x" * 101)
+    monkeypatch.setattr(
+        "agentworkmemory.services.vault_repository.service.MAX_PUBLISHABLE_FILE_BYTES",
+        100,
+    )
+
+    with pytest.raises(ValueError, match="publication limit"):
+        app.vault_repository.push("Publish safely")
+
+    assert not any(call[0] == "commit_all" for call in adapter.calls)
+
+
 def test_setup_can_clone_private_vault_repository(tmp_path: Path, capsys):
     adapter = FakeVaultRepositoryAdapter()
     app = repository_app(tmp_path, adapter)
