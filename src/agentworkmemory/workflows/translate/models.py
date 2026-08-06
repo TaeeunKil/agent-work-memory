@@ -3,7 +3,7 @@ from pathlib import Path
 from pydantic import field_validator
 
 from agentworkmemory.core import AgentWorkMemoryModel
-from agentworkmemory.services.curators.models import ContentAccess
+from agentworkmemory.services.curators.models import ContentAccess, ReasoningEffort
 from agentworkmemory.services.translations import Locale
 
 
@@ -12,6 +12,7 @@ class TranslateWikiPages(AgentWorkMemoryModel):
     locale: Locale
     runtime: str
     model: str | None = None
+    effort: ReasoningEffort | None = None
     content_access: ContentAccess
 
     @field_validator("paths")

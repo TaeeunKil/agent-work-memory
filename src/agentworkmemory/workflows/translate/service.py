@@ -91,6 +91,7 @@ class TranslateWikiWorkflow:
                 CuratorRunRequest(
                     runtime=request.runtime,
                     model=request.model,
+                    effort=request.effort,
                     vault_path=workspace,
                     prompt=translation_prompt(
                         path,

@@ -333,6 +333,7 @@ def run_options(
     )
     return RunOptions(
         model=request.model,
+        effort=request.effort.value if request.effort is not None else None,
         timeout_seconds=CURATOR_TIMEOUT_SECONDS,
         permissions=permissions,
         provider=provider,

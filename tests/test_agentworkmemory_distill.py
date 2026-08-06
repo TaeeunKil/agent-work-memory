@@ -30,6 +30,7 @@ from agentworkmemory.services.curators.models import (
     CuratorRunRequest,
     CuratorRunResult,
     CuratorRunStatus,
+    ReasoningEffort,
 )
 from agentworkmemory.services.distillation.models import (
     DistillStatus,
@@ -557,6 +558,28 @@ def test_windows_yoke_curator_uses_standalone_codex_cli(
     assert ".awm-curator-output.json" in harness.agent.instructions
     assert options.provider is None
     assert harness.plan(options).ok
+
+
+@pytest.mark.parametrize("effort", (ReasoningEffort.XHIGH, ReasoningEffort.MAX))
+def test_yoke_curator_passes_reasoning_effort_to_codex(
+    tmp_path: Path,
+    effort: ReasoningEffort,
+):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    request = CuratorRunRequest(
+        runtime="codex",
+        model="gpt-5.6-luna",
+        effort=effort,
+        vault_path=vault,
+        prompt="Maintain durable Wiki knowledge.",
+        content_access=ContentAccess.SELECTED_REMOTE,
+    )
+
+    options = run_options(request, surface="codex_cli")
+
+    assert options.model == "gpt-5.6-luna"
+    assert options.effort == effort.value
 
 
 def test_windows_curator_output_is_written_by_parent_process(tmp_path: Path):

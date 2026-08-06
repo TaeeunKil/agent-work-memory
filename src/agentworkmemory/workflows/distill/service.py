@@ -75,6 +75,7 @@ class DistillSessionsWorkflow:
                     CuratorRunRequest(
                         runtime=request.runtime,
                         model=request.model,
+                        effort=request.effort,
                         vault_path=workspace,
                         prompt=prompt,
                         content_access=request.content_access,

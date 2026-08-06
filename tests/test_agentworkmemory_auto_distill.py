@@ -19,6 +19,7 @@ from agentworkmemory.services.curators.models import (
     CuratorRunRequest,
     CuratorRunResult,
     CuratorRunStatus,
+    ReasoningEffort,
 )
 from agentworkmemory.services.vault import snapshot as vault_snapshot
 from agentworkmemory.settings import AgentWorkMemoryConfig
@@ -90,6 +91,22 @@ def test_auto_distill_settings_accept_a_large_bounded_backlog():
     assert settings.max_sessions_total == 439
 
 
+def test_auto_distill_settings_preserve_model_and_reasoning_effort():
+    settings = AutoDistillSettings(
+        interval_minutes=10,
+        limit=1,
+        runtime="codex",
+        model="gpt-5.6-luna",
+        effort=ReasoningEffort.XHIGH,
+        content_access=ContentAccess.SELECTED_REMOTE,
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+        max_sessions_total=3,
+    )
+
+    assert settings.model == "gpt-5.6-luna"
+    assert settings.effort is ReasoningEffort.XHIGH
+
+
 def test_auto_distill_settings_reject_an_effectively_unbounded_grant():
     with pytest.raises(ValidationError):
         AutoDistillSettings(
@@ -122,6 +139,10 @@ def test_auto_distill_cli_installs_runs_and_removes_bounded_remote_grant(
             "1",
             "--using",
             "codex",
+            "--model",
+            "gpt-5.6-luna",
+            "--effort",
+            "max",
             "--allow-remote-content",
         )
     )
@@ -132,6 +153,8 @@ def test_auto_distill_cli_installs_runs_and_removes_bounded_remote_grant(
     assert settings.interval_minutes == 60
     assert settings.limit == 1
     assert settings.content_access is ContentAccess.SELECTED_REMOTE
+    assert settings.model == "gpt-5.6-luna"
+    assert settings.effort is ReasoningEffort.MAX
     assert settings.installed_at is not None
     assert settings.max_sessions_total == 24
     assert settings.sessions_reserved == 0
@@ -147,6 +170,8 @@ def test_auto_distill_cli_installs_runs_and_removes_bounded_remote_grant(
     assert dispatch(run, app) == 0
     assert len(curator.requests) == 1
     assert curator.requests[0].content_access is ContentAccess.SELECTED_REMOTE
+    assert curator.requests[0].model == "gpt-5.6-luna"
+    assert curator.requests[0].effort is ReasoningEffort.MAX
     assert app.sessions.get(second.session_id).distilled_at is not None
     assert app.sessions.get(first.session_id).distilled_at is None
     assert app.auto_distillation.settings().sessions_reserved == 1
@@ -165,6 +190,49 @@ def test_auto_distill_cli_installs_runs_and_removes_bounded_remote_grant(
     assert "Starting Wiki distillation" in captured.err
     assert "Automatic distillation command finished after" in captured.err
     assert "Codex step" not in captured.err
+
+
+def test_auto_distill_configure_preserves_the_existing_standing_grant(
+    tmp_path: Path,
+):
+    scheduler = FakeAutoDistillScheduler()
+    curator = FakeCurator()
+    app = auto_distill_app(tmp_path, scheduler, curator)
+    expires_at = datetime.now(UTC) + timedelta(days=2)
+    app.auto_distillation.install(
+        AutoDistillSettings(
+            interval_minutes=60,
+            limit=2,
+            runtime="codex",
+            model="gpt-5.5",
+            content_access=ContentAccess.SELECTED_REMOTE,
+            expires_at=expires_at,
+            max_sessions_total=9,
+            sessions_reserved=4,
+        )
+    )
+
+    args = build_parser().parse_args(
+        (
+            "auto-distill",
+            "configure",
+            "--model",
+            "gpt-5.6-luna",
+            "--effort",
+            "extra-high",
+        )
+    )
+
+    assert dispatch(args, app) == 0
+    settings = app.auto_distillation.settings()
+    assert settings.model == "gpt-5.6-luna"
+    assert settings.effort is ReasoningEffort.XHIGH
+    assert settings.interval_minutes == 60
+    assert settings.limit == 2
+    assert settings.expires_at == expires_at
+    assert settings.max_sessions_total == 9
+    assert settings.sessions_reserved == 4
+    assert len(scheduler.installs) == 1
 
 
 def test_auto_distill_install_requires_explicit_standing_content_grant(

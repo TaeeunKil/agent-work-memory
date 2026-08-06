@@ -72,6 +72,7 @@ class AutoDistillWorkflow:
                         session_ids=session_ids,
                         runtime=settings.runtime,
                         model=settings.model,
+                        effort=settings.effort,
                         content_access=settings.content_access,
                     )
                     self.distill.preflight(request)
@@ -117,6 +118,7 @@ class AutoDistillWorkflow:
                         locale=locale,
                         runtime=settings.runtime,
                         model=settings.model,
+                        effort=settings.effort,
                         content_access=settings.content_access,
                     )
                 )

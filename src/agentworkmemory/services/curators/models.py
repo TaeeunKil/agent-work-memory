@@ -12,6 +12,14 @@ class ContentAccess(StrEnum):
     SELECTED_REMOTE = "selected-remote"
 
 
+class ReasoningEffort(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+    MAX = "max"
+
+
 class CuratorRunStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -28,6 +36,7 @@ class CuratorReadiness(AgentWorkMemoryModel):
 class CuratorRunRequest(AgentWorkMemoryModel):
     runtime: str
     model: str | None = None
+    effort: ReasoningEffort | None = None
     vault_path: Path
     prompt: str
     content_access: ContentAccess

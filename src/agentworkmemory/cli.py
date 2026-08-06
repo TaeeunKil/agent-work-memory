@@ -12,7 +12,10 @@ from typing import TextIO
 from agentworkmemory.app import AgentWorkMemory, create_app
 from agentworkmemory.services.auto_distillation.models import AutoDistillSettings
 from agentworkmemory.services.automation.models import AutoSyncSettings
-from agentworkmemory.services.curators.models import ContentAccess
+from agentworkmemory.services.curators.models import (
+    ContentAccess,
+    ReasoningEffort,
+)
 from agentworkmemory.services.diagnostics.models import DiagnosticStatus
 from agentworkmemory.services.distillation.outcomes import (
     summarize_session_outcomes,
@@ -189,6 +192,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="codex",
     )
     auto_distill_install.add_argument("--model")
+    auto_distill_install.add_argument("--effort", type=parse_reasoning_effort)
     auto_distill_access = auto_distill_install.add_mutually_exclusive_group()
     auto_distill_access.add_argument(
         "--allow-local-content",
@@ -199,6 +203,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-remote-content",
         action="store_true",
         help="Persist permission to send selected bodies to the named runtime.",
+    )
+    auto_distill_configure = auto_distill_commands.add_parser(
+        "configure",
+        help="Change the curator model or reasoning effort in the current grant.",
+    )
+    auto_distill_configure.add_argument("--model")
+    auto_distill_configure.add_argument(
+        "--effort",
+        type=parse_reasoning_effort,
     )
     auto_distill_commands.add_parser(
         "status",
@@ -279,6 +292,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     distill.add_argument("--using", dest="runtime", default="codex")
     distill.add_argument("--model")
+    distill.add_argument("--effort", type=parse_reasoning_effort)
     content_access = distill.add_mutually_exclusive_group()
     content_access.add_argument(
         "--allow-local-content",
@@ -316,6 +330,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     translate.add_argument("--using", dest="runtime", default="codex")
     translate.add_argument("--model")
+    translate.add_argument("--effort", type=parse_reasoning_effort)
     translation_access = translate.add_mutually_exclusive_group()
     translation_access.add_argument(
         "--allow-local-content",
@@ -365,6 +380,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (KeyError, OSError, RuntimeError, ValueError, sqlite3.Error) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+
+
+def parse_reasoning_effort(value: str) -> ReasoningEffort:
+    normalized = value.strip().lower().replace("_", "-").replace(" ", "-")
+    normalized = {
+        "extra-high": "xhigh",
+        "x-high": "xhigh",
+    }.get(normalized, normalized)
+    try:
+        return ReasoningEffort(normalized)
+    except ValueError as error:
+        choices = ", ".join(effort.value for effort in ReasoningEffort)
+        raise argparse.ArgumentTypeError(
+            f"reasoning effort must be one of: {choices}"
+        ) from error
+
+
+def curator_configuration_text(settings: AutoDistillSettings) -> str:
+    model = settings.model or "runtime default"
+    effort = settings.effort.value if settings.effort else "runtime default"
+    return f"Curator: {model}; reasoning effort: {effort}."
+
+
+def direct_curator_configuration_text(args: argparse.Namespace) -> str:
+    model = args.model or "runtime default"
+    effort = args.effort.value if args.effort else "runtime default"
+    access = distill_content_access(args).value
+    return (
+        f"Curator: {args.runtime}; model {model}; reasoning effort {effort}; "
+        f"content {access}."
+    )
 
 
 def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
@@ -420,11 +466,13 @@ def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
             print(f"Selected {len(session_ids)} pending session(s):")
             for session_id in session_ids:
                 print(session_id)
+        print(direct_curator_configuration_text(args))
         receipt = app.distill.run(
             DistillSessions(
                 session_ids=session_ids,
                 runtime=args.runtime,
                 model=args.model,
+                effort=args.effort,
                 content_access=distill_content_access(args),
             )
         )
@@ -441,12 +489,14 @@ def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
         if not paths:
             print("No Wiki pages are waiting for that translation.")
             return 0
+        print(direct_curator_configuration_text(args))
         changed = app.translate.run(
             TranslateWikiPages(
                 paths=paths,
                 locale=args.locale,
                 runtime=args.runtime,
                 model=args.model,
+                effort=args.effort,
                 content_access=distill_content_access(args),
             )
         )
@@ -723,6 +773,7 @@ def dispatch_auto_distill(args: argparse.Namespace, app: AgentWorkMemory) -> int
             limit=args.limit,
             runtime=args.runtime,
             model=args.model,
+            effort=args.effort,
             content_access=content_access,
             expires_at=datetime.now(UTC) + timedelta(days=args.for_days),
             max_sessions_total=args.max_total,
@@ -735,6 +786,7 @@ def dispatch_auto_distill(args: argparse.Namespace, app: AgentWorkMemory) -> int
             f"{settings.limit} pending session(s) via {settings.runtime} "
             f"with {settings.content_access.value}."
         )
+        print(curator_configuration_text(settings))
         print(
             f"Standing grant: at most {settings.max_sessions_total} session(s), "
             f"expires {settings.expires_at.isoformat()}."
@@ -750,6 +802,7 @@ def dispatch_auto_distill(args: argparse.Namespace, app: AgentWorkMemory) -> int
                 f"limit {settings.limit}; runtime {settings.runtime}; "
                 f"content {settings.content_access.value}."
             )
+            print(curator_configuration_text(settings))
             print(
                 f"Standing grant: {settings.sessions_reserved}/"
                 f"{settings.max_sessions_total} session(s); "
@@ -763,8 +816,24 @@ def dispatch_auto_distill(args: argparse.Namespace, app: AgentWorkMemory) -> int
                 f"{len(receipt.session_ids)} session(s)."
             )
         return 0
+    if args.auto_distill_command == "configure":
+        settings = app.auto_distillation.configure(
+            model=args.model,
+            effort=args.effort,
+        )
+        print("Automatic distillation curator configuration updated.")
+        print(curator_configuration_text(settings))
+        print(
+            f"Standing grant preserved: {settings.sessions_reserved}/"
+            f"{settings.max_sessions_total} session(s); "
+            f"expires {settings.expires_at.isoformat()}."
+        )
+        return 0
     if args.auto_distill_command == "run":
         app.vault.require_path()
+        settings = app.auto_distillation.settings()
+        print(curator_configuration_text(settings))
+        print(f"Content access: {settings.content_access.value}.")
         with foreground_progress(
             "Automatic distillation started. Checking synchronization."
         ) as report_progress:

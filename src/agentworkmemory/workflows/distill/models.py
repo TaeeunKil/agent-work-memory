@@ -1,13 +1,14 @@
 from pydantic import field_validator
 
 from agentworkmemory.core import AgentWorkMemoryModel
-from agentworkmemory.services.curators.models import ContentAccess
+from agentworkmemory.services.curators.models import ContentAccess, ReasoningEffort
 
 
 class DistillSessions(AgentWorkMemoryModel):
     session_ids: tuple[str, ...]
     runtime: str
     model: str | None = None
+    effort: ReasoningEffort | None = None
     content_access: ContentAccess = ContentAccess.METADATA_ONLY
 
     @field_validator("session_ids")

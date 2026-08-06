@@ -4,6 +4,7 @@ from agentworkmemory.services.curators.models import (
     CuratorRunRequest,
     CuratorRunResult,
     CuratorRunStatus,
+    ReasoningEffort,
 )
 from agentworkmemory.services.curators.service import CuratorsService
 
@@ -13,5 +14,6 @@ __all__ = [
     "CuratorRunRequest",
     "CuratorRunResult",
     "CuratorRunStatus",
+    "ReasoningEffort",
     "CuratorsService",
 ]

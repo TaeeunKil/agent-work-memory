@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import Field, field_validator, model_validator
 
 from agentworkmemory.core import AgentWorkMemoryModel
-from agentworkmemory.services.curators.models import ContentAccess
+from agentworkmemory.services.curators.models import ContentAccess, ReasoningEffort
 
 
 class AutoDistillSettings(AgentWorkMemoryModel):
@@ -11,6 +11,7 @@ class AutoDistillSettings(AgentWorkMemoryModel):
     limit: int = Field(ge=1, le=20)
     runtime: str
     model: str | None = None
+    effort: ReasoningEffort | None = None
     content_access: ContentAccess
     installed_at: datetime | None = None
     expires_at: datetime

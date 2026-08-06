@@ -9,6 +9,7 @@ from agentworkmemory.services.auto_distillation.ports import (
     AutoDistillSchedulerAdapter,
 )
 from agentworkmemory.services.auto_distillation.store import AutoDistillStore
+from agentworkmemory.services.curators.models import ReasoningEffort
 
 
 class AutoDistillationService:
@@ -40,6 +41,25 @@ class AutoDistillationService:
         if settings is None:
             raise RuntimeError("automatic distillation is not configured")
         return settings
+
+    def configure(
+        self,
+        *,
+        model: str | None = None,
+        effort: ReasoningEffort | None = None,
+    ) -> AutoDistillSettings:
+        """Update curator selection without replacing the standing grant."""
+        if model is None and effort is None:
+            raise ValueError("configure requires a model or reasoning effort")
+        settings = self.settings()
+        updated = settings.model_copy(
+            update={
+                "model": model if model is not None else settings.model,
+                "effort": effort if effort is not None else settings.effort,
+            }
+        )
+        self.store.save(updated)
+        return updated
 
     def available_batch_limit(self, now: datetime | None = None) -> int:
         settings = self.settings()
