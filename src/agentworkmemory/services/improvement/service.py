@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -11,11 +12,17 @@ from agentworkmemory.services.improvement.models import (
     ImprovementCandidate,
     ImprovementCandidateProposal,
     ImprovementEvidence,
+    ImprovementProposalAttempt,
+    ImprovementProposalAttemptState,
+    ImprovementProposerPolicy,
     ImprovementRun,
     ImprovementRunState,
     require_paths_inside_surface,
 )
 from agentworkmemory.services.improvement.store import ImprovementStore
+
+MAX_ATTEMPT_FAILURE_LENGTH = 4096
+URL_CREDENTIALS = re.compile(r"(?i)(https?://)([^/\s@]+)@")
 
 
 class ImprovementService:
@@ -60,6 +67,72 @@ class ImprovementService:
 
     def list(self) -> tuple[ImprovementRun, ...]:
         return self.store.list_runs()
+
+    def start_attempt(
+        self,
+        run_id: str,
+        policy: ImprovementProposerPolicy,
+        worktree: Path | None = None,
+    ) -> ImprovementProposalAttempt:
+        run = self.get(run_id)
+        if run.state is not ImprovementRunState.PREPARED:
+            raise ValueError(
+                f"improvement run {run_id} cannot start an attempt in state "
+                f"{run.state.value}"
+            )
+        attempt_id = f"att_{uuid4().hex[:24]}"
+        expected_worktree = self.store.worktree_directory(run_id, attempt_id)
+        selected_worktree = expected_worktree if worktree is None else worktree
+        attempt = ImprovementProposalAttempt(
+            attempt_id=attempt_id,
+            run_id=run_id,
+            policy=policy,
+            base_revision=run.base_revision,
+            worktree=selected_worktree,
+            state=ImprovementProposalAttemptState.STARTED,
+            started_at=datetime.now(UTC),
+        )
+        self.store.save_attempt(attempt)
+        return attempt
+
+    def attempts(self, run_id: str) -> tuple[ImprovementProposalAttempt, ...]:
+        self.get(run_id)
+        return self.store.list_attempts(run_id)
+
+    def attempt(self, attempt_id: str) -> ImprovementProposalAttempt:
+        attempt = self.store.find_attempt(attempt_id)
+        if attempt is None:
+            raise KeyError(f"unknown improvement attempt: {attempt_id}")
+        return attempt
+
+    def complete_attempt(self, attempt_id: str, candidate_id: str) -> None:
+        attempt = self.attempt(attempt_id)
+        if attempt.state is not ImprovementProposalAttemptState.STARTED:
+            raise ValueError(f"improvement attempt {attempt_id} is already terminal")
+        self.candidate(attempt.run_id, candidate_id)
+        self.store.update_attempt(
+            attempt.model_copy(
+                update={
+                    "state": ImprovementProposalAttemptState.SUCCEEDED,
+                    "completed_at": datetime.now(UTC),
+                    "candidate_id": candidate_id,
+                }
+            )
+        )
+
+    def fail_attempt(self, attempt_id: str, failure: str) -> None:
+        attempt = self.attempt(attempt_id)
+        if attempt.state is not ImprovementProposalAttemptState.STARTED:
+            raise ValueError(f"improvement attempt {attempt_id} is already terminal")
+        self.store.update_attempt(
+            attempt.model_copy(
+                update={
+                    "state": ImprovementProposalAttemptState.FAILED,
+                    "completed_at": datetime.now(UTC),
+                    "failure": sanitize_attempt_failure(failure),
+                }
+            )
+        )
 
     def record_candidate(
         self,
@@ -156,3 +229,11 @@ def candidate_for_run(
         regression_risks=proposal.regression_risks,
         changed_paths=proposal.changed_paths,
     )
+
+
+def sanitize_attempt_failure(error: BaseException | str) -> str:
+    text = str(error).strip()
+    if not text:
+        text = type(error).__name__ if isinstance(error, BaseException) else "unknown"
+    sanitized = URL_CREDENTIALS.sub(r"\1***@", text)
+    return sanitized[:MAX_ATTEMPT_FAILURE_LENGTH]

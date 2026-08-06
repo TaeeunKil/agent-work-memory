@@ -3,10 +3,11 @@ from pathlib import Path
 from pydantic import field_validator
 
 from agentworkmemory.core import AgentWorkMemoryModel
-from agentworkmemory.services.curators.models import ContentAccess
+from agentworkmemory.services.curators.models import ContentAccess, ReasoningEffort
 from agentworkmemory.services.improvement.models import (
     EvaluationReport,
     ImprovementCandidate,
+    ImprovementIdentifier,
     ImprovementRun,
     normalize_relative_paths,
 )
@@ -42,6 +43,22 @@ class PrepareImprovementRun(AgentWorkMemoryModel):
         if not paths:
             raise ValueError("improvement preparation needs editable paths")
         return paths
+
+
+class ProposeImprovement(AgentWorkMemoryModel):
+    run_id: ImprovementIdentifier
+    model: str | None = None
+    reasoning_effort: ReasoningEffort | None = None
+
+    @field_validator("model")
+    @classmethod
+    def nonblank_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        model = value.strip()
+        if not model:
+            raise ValueError("improvement proposer model must not be blank")
+        return model
 
 
 class ImprovementCandidateSummary(AgentWorkMemoryModel):

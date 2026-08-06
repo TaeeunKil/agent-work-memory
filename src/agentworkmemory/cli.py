@@ -28,12 +28,15 @@ from agentworkmemory.services.sessions.models import (
 from agentworkmemory.services.synchronization.models import SyncReceipt, SyncStatus
 from agentworkmemory.services.translations import Locale
 from agentworkmemory.services.vault_repository.service import DEFAULT_COMMIT_MESSAGE
-from agentworkmemory.settings import load_config
+from agentworkmemory.settings import configure_improvement_proposer, load_config
 from agentworkmemory.workflows.auto_distill import AutoDistillRunState
 from agentworkmemory.workflows.collect import CollectAgentRecords
 from agentworkmemory.workflows.distill import DistillSessions
 from agentworkmemory.workflows.import_legacy import ImportLegacyAlmanac
-from agentworkmemory.workflows.improve_harness import PrepareImprovementRun
+from agentworkmemory.workflows.improve_harness import (
+    PrepareImprovementRun,
+    ProposeImprovement,
+)
 from agentworkmemory.workflows.remote_sync import SyncRemoteRecords
 from agentworkmemory.workflows.setup import SetupAgentWorkMemory
 from agentworkmemory.workflows.sync import SyncAgentRecords
@@ -350,6 +353,23 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Relative editable path; repeat or provide several paths explicitly.",
     )
+    improve_commands.add_parser(
+        "settings",
+        help="Show the durable Codex improvement proposer defaults.",
+    )
+    improve_configure = improve_commands.add_parser(
+        "configure",
+        help="Update durable Codex improvement proposer defaults.",
+    )
+    improve_configure.add_argument("--model")
+    improve_configure.add_argument("--effort", type=parse_reasoning_effort)
+    improve_propose = improve_commands.add_parser(
+        "propose",
+        help="Create one candidate improvement in a detached Git worktree.",
+    )
+    improve_propose.add_argument("run_id")
+    improve_propose.add_argument("--model")
+    improve_propose.add_argument("--effort", type=parse_reasoning_effort)
     improve_commands.add_parser(
         "list",
         help="List prepared and evaluated improvement runs.",
@@ -766,6 +786,36 @@ def dispatch_improve(args: argparse.Namespace, app: AgentWorkMemory) -> int:
         run = app.improve_harness.prepare(request)
         print(f"Prepared improvement run {run.run_id}.")
         print_improvement_run_summary(run)
+        return 0
+    if args.improve_command == "settings":
+        settings = app.config.improvement_proposer
+        print(f"model: {settings.model}")
+        print(f"reasoning effort: {settings.reasoning_effort.value}")
+        return 0
+    if args.improve_command == "configure":
+        config = configure_improvement_proposer(
+            app.config,
+            model=args.model,
+            reasoning_effort=args.effort,
+        )
+        settings = config.improvement_proposer
+        print("Improvement proposer settings updated.")
+        print(f"model: {settings.model}")
+        print(f"reasoning effort: {settings.reasoning_effort.value}")
+        return 0
+    if args.improve_command == "propose":
+        candidate = app.improve_harness.propose(
+            ProposeImprovement(
+                run_id=args.run_id,
+                model=args.model,
+                reasoning_effort=args.effort,
+            )
+        )
+        print(f"Proposed improvement candidate {candidate.candidate_id}.")
+        print(
+            "changed: "
+            + ", ".join(path.as_posix() for path in candidate.changed_paths)
+        )
         return 0
     if args.improve_command == "list":
         runs = app.improve_harness.list()

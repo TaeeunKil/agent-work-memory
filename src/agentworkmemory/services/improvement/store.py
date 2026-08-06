@@ -13,6 +13,8 @@ from agentworkmemory.services.improvement.models import (
     EvaluationReport,
     ImprovementCandidate,
     ImprovementEvidence,
+    ImprovementProposalAttempt,
+    ImprovementProposalAttemptState,
     ImprovementRun,
     ImprovementRunManifest,
     duplicate_evaluation_case_identities,
@@ -133,6 +135,97 @@ class ImprovementStore:
             sorted(runs, key=lambda run: (run.created_at, run.run_id), reverse=True)
         )
 
+    def save_attempt(self, attempt: ImprovementProposalAttempt) -> None:
+        self.validate_attempt_location(attempt)
+        if self.get_run(attempt.run_id) is None:
+            raise KeyError(f"unknown improvement run: {attempt.run_id}")
+        attempt_root = self.attempt_directory(attempt.run_id, attempt.attempt_id)
+        if attempt_root.exists():
+            raise FileExistsError(
+                f"improvement attempt already exists: {attempt.attempt_id}"
+            )
+        attempts_root = self.run_directory(attempt.run_id) / "attempts"
+        attempts_root.mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(prefix=".attempt-", dir=attempts_root))
+        try:
+            atomic_write_text(
+                staging / "manifest.json",
+                attempt.model_dump_json(indent=2) + "\n",
+                self.root,
+            )
+            publish_directory(staging, attempt_root, self.root)
+        except Exception:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+
+    def update_attempt(self, attempt: ImprovementProposalAttempt) -> None:
+        self.validate_attempt_location(attempt)
+        current = self.get_attempt(attempt.run_id, attempt.attempt_id)
+        if current is None:
+            raise KeyError(f"unknown improvement attempt: {attempt.attempt_id}")
+        immutable_fields = (
+            ("run_id", current.run_id, attempt.run_id),
+            ("policy", current.policy, attempt.policy),
+            ("base_revision", current.base_revision, attempt.base_revision),
+            ("worktree", current.worktree, attempt.worktree),
+            ("started_at", current.started_at, attempt.started_at),
+        )
+        for field_name, current_value, updated_value in immutable_fields:
+            if current_value != updated_value:
+                raise ValueError(f"improvement attempt {field_name} is immutable")
+        if current.state is not ImprovementProposalAttemptState.STARTED:
+            raise ValueError("improvement attempt is already terminal")
+        if attempt.state is ImprovementProposalAttemptState.STARTED:
+            raise ValueError("improvement attempt update needs a terminal state")
+        atomic_write_text(
+            self.attempt_directory(attempt.run_id, attempt.attempt_id)
+            / "manifest.json",
+            attempt.model_dump_json(indent=2) + "\n",
+            self.root,
+        )
+
+    def get_attempt(
+        self,
+        run_id: str,
+        attempt_id: str,
+    ) -> ImprovementProposalAttempt | None:
+        manifest_path = (
+            self.attempt_directory(run_id, attempt_id) / "manifest.json"
+        )
+        if not manifest_path.is_file():
+            return None
+        return ImprovementProposalAttempt.model_validate_json(
+            manifest_path.read_text(encoding="utf-8")
+        )
+
+    def list_attempts(
+        self,
+        run_id: str,
+    ) -> tuple[ImprovementProposalAttempt, ...]:
+        attempts_root = self.run_directory(run_id) / "attempts"
+        if not attempts_root.is_dir():
+            return ()
+        attempts: list[ImprovementProposalAttempt] = []
+        for path in attempts_root.iterdir():
+            if not path.is_dir() or path.name.startswith("."):
+                continue
+            attempt = self.get_attempt(run_id, path.name)
+            if attempt is not None:
+                attempts.append(attempt)
+        return tuple(
+            sorted(
+                attempts,
+                key=lambda attempt: (attempt.started_at, attempt.attempt_id),
+            )
+        )
+
+    def find_attempt(self, attempt_id: str) -> ImprovementProposalAttempt | None:
+        for run in self.list_runs():
+            attempt = self.get_attempt(run.run_id, attempt_id)
+            if attempt is not None:
+                return attempt
+        return None
+
     def save_candidate(
         self,
         run: ImprovementRun,
@@ -235,8 +328,31 @@ class ImprovementStore:
             self.run_directory(run_id) / "candidates" / store_identifier(candidate_id)
         )
 
+    def attempt_directory(self, run_id: str, attempt_id: str) -> Path:
+        return self.safe_child(
+            self.run_directory(run_id) / "attempts" / store_identifier(attempt_id)
+        )
+
+    def worktree_directory(self, run_id: str, attempt_id: str) -> Path:
+        return self.safe_child(
+            self.root / "worktrees" / store_identifier(run_id) / store_identifier(
+                attempt_id
+            )
+        )
+
     def validate_run_location(self, run: ImprovementRun) -> None:
         self.run_directory(run.run_id)
+
+    def validate_attempt_location(
+        self,
+        attempt: ImprovementProposalAttempt,
+    ) -> None:
+        expected_worktree = self.worktree_directory(
+            attempt.run_id,
+            attempt.attempt_id,
+        )
+        if attempt.worktree != expected_worktree:
+            raise ValueError("improvement attempt worktree is outside the store root")
 
     def safe_child(self, path: Path) -> Path:
         resolved = path.resolve(strict=False)

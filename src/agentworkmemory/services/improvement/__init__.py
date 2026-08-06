@@ -9,11 +9,15 @@ from agentworkmemory.services.improvement.models import (
     ImprovementCandidateProposal,
     ImprovementEvidence,
     ImprovementEvidenceEvent,
+    ImprovementProposalAttempt,
+    ImprovementProposalAttemptState,
+    ImprovementProposerPolicy,
     ImprovementRun,
     ImprovementRunState,
 )
 from agentworkmemory.services.improvement.ports import (
     ImprovementEvaluator,
+    ImprovementProposer,
     RepositoryRevisionReader,
 )
 from agentworkmemory.services.improvement.service import ImprovementService
@@ -31,6 +35,10 @@ __all__ = [
     "ImprovementEvaluator",
     "ImprovementEvidence",
     "ImprovementEvidenceEvent",
+    "ImprovementProposalAttempt",
+    "ImprovementProposalAttemptState",
+    "ImprovementProposer",
+    "ImprovementProposerPolicy",
     "ImprovementRun",
     "ImprovementRunState",
     "ImprovementService",

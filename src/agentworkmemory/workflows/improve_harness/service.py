@@ -1,4 +1,4 @@
-from agentworkmemory.services.curators.models import ContentAccess
+from agentworkmemory.services.curators.models import ContentAccess, ReasoningEffort
 from agentworkmemory.services.improvement.models import (
     EvaluationCaseResult,
     EvaluationReport,
@@ -6,19 +6,23 @@ from agentworkmemory.services.improvement.models import (
     ImprovementCandidateProposal,
     ImprovementEvidence,
     ImprovementEvidenceEvent,
+    ImprovementProposerPolicy,
     ImprovementRun,
 )
 from agentworkmemory.services.improvement.ports import (
     ImprovementEvaluator,
+    ImprovementProposer,
     RepositoryRevisionReader,
 )
 from agentworkmemory.services.improvement.service import ImprovementService
 from agentworkmemory.services.sessions.models import AgentEventMetadata, AgentSession
 from agentworkmemory.services.sessions.service import SessionsService
+from agentworkmemory.settings import ImprovementProposerSettings
 from agentworkmemory.workflows.improve_harness.models import (
     ImprovementCandidateSummary,
     ImprovementRunDetails,
     PrepareImprovementRun,
+    ProposeImprovement,
 )
 
 
@@ -30,10 +34,14 @@ class ImproveHarnessWorkflow:
         sessions: SessionsService,
         improvement: ImprovementService,
         revision_reader: RepositoryRevisionReader,
+        proposer: ImprovementProposer | None = None,
+        proposer_settings: ImprovementProposerSettings | None = None,
     ):
         self.sessions = sessions
         self.improvement = improvement
         self.revision_reader = revision_reader
+        self.proposer = proposer
+        self.proposer_settings = proposer_settings or ImprovementProposerSettings()
 
     def prepare(self, request: PrepareImprovementRun) -> ImprovementRun:
         selected = tuple(
@@ -70,6 +78,29 @@ class ImproveHarnessWorkflow:
             for candidate in self.improvement.candidates(run_id)
         )
         return ImprovementRunDetails(run=run, candidates=summaries)
+
+    def propose(self, request: ProposeImprovement) -> ImprovementCandidate:
+        if self.proposer is None:
+            raise RuntimeError("improvement proposer is not configured")
+        run = self.improvement.get(request.run_id)
+        previous_attempts = self.improvement.attempts(request.run_id)
+        policy = resolve_policy(
+            self.proposer_settings,
+            model=request.model,
+            effort=request.reasoning_effort,
+        )
+        attempt = self.improvement.start_attempt(run.run_id, policy)
+        try:
+            proposal = self.proposer.propose(run, attempt, previous_attempts)
+            candidate = self.improvement.record_candidate(run.run_id, proposal)
+        except Exception as error:
+            self.improvement.fail_attempt(attempt.attempt_id, str(error))
+            raise
+        self.improvement.complete_attempt(
+            attempt.attempt_id,
+            candidate.candidate_id,
+        )
+        return candidate
 
     def record_candidate(
         self,
@@ -129,6 +160,20 @@ def improvement_evidence(
         title=session.title,
         workspace=session.cwd,
         events=events,
+    )
+
+
+def resolve_policy(
+    defaults: ImprovementProposerSettings,
+    *,
+    model: str | None = None,
+    effort: ReasoningEffort | None = None,
+) -> ImprovementProposerPolicy:
+    return ImprovementProposerPolicy(
+        model=defaults.model if model is None else model,
+        reasoning_effort=(
+            defaults.reasoning_effort if effort is None else effort
+        ),
     )
 
 

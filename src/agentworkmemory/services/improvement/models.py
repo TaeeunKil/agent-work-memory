@@ -2,12 +2,12 @@ import os
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import StringConstraints, field_validator
+from pydantic import StringConstraints, field_validator, model_validator
 
 from agentworkmemory.core import AgentWorkMemoryModel
-from agentworkmemory.services.curators.models import ContentAccess
+from agentworkmemory.services.curators.models import ContentAccess, ReasoningEffort
 from agentworkmemory.services.sessions.models import AgentEventKind
 
 ImprovementIdentifier = Annotated[
@@ -25,6 +25,26 @@ class ImprovementRunState(StrEnum):
     CANDIDATE_RECORDED = "candidate-recorded"
     QUALIFIED = "qualified"
     REJECTED = "rejected"
+
+
+class ImprovementProposerPolicy(AgentWorkMemoryModel):
+    runtime: Literal["codex"] = "codex"
+    model: str
+    reasoning_effort: ReasoningEffort
+
+    @field_validator("model")
+    @classmethod
+    def nonblank_model(cls, value: str) -> str:
+        model = value.strip()
+        if not model:
+            raise ValueError("improvement proposer model must not be blank")
+        return model
+
+
+class ImprovementProposalAttemptState(StrEnum):
+    STARTED = "started"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
 
 
 class HarnessComponent(StrEnum):
@@ -183,6 +203,68 @@ class ImprovementRun(AgentWorkMemoryModel):
             created_at=self.created_at,
             updated_at=self.updated_at,
         )
+
+
+class ImprovementProposalAttempt(AgentWorkMemoryModel):
+    attempt_id: ImprovementIdentifier
+    run_id: ImprovementIdentifier
+    policy: ImprovementProposerPolicy
+    base_revision: str
+    worktree: Path
+    state: ImprovementProposalAttemptState
+    started_at: datetime
+    completed_at: datetime | None = None
+    candidate_id: ImprovementIdentifier | None = None
+    failure: str | None = None
+
+    @field_validator("base_revision")
+    @classmethod
+    def required_revision(cls, value: str) -> str:
+        revision = value.strip()
+        if not revision:
+            raise ValueError("improvement attempt base revision must not be empty")
+        return revision
+
+    @field_validator("worktree")
+    @classmethod
+    def absolute_worktree(cls, value: Path) -> Path:
+        worktree = Path(value).expanduser()
+        if not worktree.is_absolute():
+            raise ValueError("improvement attempt worktree must be absolute")
+        return worktree.resolve(strict=False)
+
+    @field_validator("failure")
+    @classmethod
+    def valid_failure(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        failure = value.strip()
+        if not failure:
+            raise ValueError("improvement attempt failure must not be blank")
+        return failure
+
+    @model_validator(mode="after")
+    def valid_lifecycle(self) -> "ImprovementProposalAttempt":
+        if self.state is ImprovementProposalAttemptState.STARTED:
+            if self.completed_at is not None:
+                raise ValueError("started improvement attempt cannot be completed")
+            if self.candidate_id is not None or self.failure is not None:
+                raise ValueError("started improvement attempt cannot have an outcome")
+        elif self.state is ImprovementProposalAttemptState.SUCCEEDED:
+            if self.completed_at is None or self.candidate_id is None:
+                raise ValueError(
+                    "succeeded improvement attempt needs completion and candidate"
+                )
+            if self.failure is not None:
+                raise ValueError("succeeded improvement attempt cannot have a failure")
+        else:
+            if self.completed_at is None or self.failure is None:
+                raise ValueError(
+                    "failed improvement attempt needs completion and failure"
+                )
+            if self.candidate_id is not None:
+                raise ValueError("failed improvement attempt cannot have a candidate")
+        return self
 
 
 class ImprovementCandidateProposal(AgentWorkMemoryModel):
