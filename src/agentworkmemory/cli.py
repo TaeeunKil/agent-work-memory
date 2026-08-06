@@ -213,6 +213,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--effort",
         type=parse_reasoning_effort,
     )
+    auto_distill_configure.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum pending sessions per scheduled batch (1-20).",
+    )
+    auto_distill_configure.add_argument(
+        "--max-total",
+        type=int,
+        metavar="SESSIONS",
+        help="Resize the existing standing grant without resetting reservations.",
+    )
     auto_distill_commands.add_parser(
         "status",
         help="Show automatic distillation settings and scheduler status.",
@@ -820,6 +831,8 @@ def dispatch_auto_distill(args: argparse.Namespace, app: AgentWorkMemory) -> int
         settings = app.auto_distillation.configure(
             model=args.model,
             effort=args.effort,
+            limit=args.limit,
+            max_sessions_total=args.max_total,
         )
         print("Automatic distillation curator configuration updated.")
         print(curator_configuration_text(settings))

@@ -47,16 +47,32 @@ class AutoDistillationService:
         *,
         model: str | None = None,
         effort: ReasoningEffort | None = None,
+        limit: int | None = None,
+        max_sessions_total: int | None = None,
     ) -> AutoDistillSettings:
         """Update curator selection without replacing the standing grant."""
-        if model is None and effort is None:
-            raise ValueError("configure requires a model or reasoning effort")
+        if (
+            model is None
+            and effort is None
+            and limit is None
+            and max_sessions_total is None
+        ):
+            raise ValueError(
+                "configure requires a model, reasoning effort, limit, or max total"
+            )
         settings = self.settings()
-        updated = settings.model_copy(
-            update={
-                "model": model if model is not None else settings.model,
-                "effort": effort if effort is not None else settings.effort,
-            }
+        updates = {
+            "model": model if model is not None else settings.model,
+            "effort": effort if effort is not None else settings.effort,
+            "limit": limit if limit is not None else settings.limit,
+            "max_sessions_total": (
+                max_sessions_total
+                if max_sessions_total is not None
+                else settings.max_sessions_total
+            ),
+        }
+        updated = AutoDistillSettings.model_validate(
+            settings.model_copy(update=updates).model_dump()
         )
         self.store.save(updated)
         return updated

@@ -220,6 +220,10 @@ def test_auto_distill_configure_preserves_the_existing_standing_grant(
             "gpt-5.6-luna",
             "--effort",
             "extra-high",
+            "--limit",
+            "10",
+            "--max-total",
+            "506",
         )
     )
 
@@ -228,9 +232,9 @@ def test_auto_distill_configure_preserves_the_existing_standing_grant(
     assert settings.model == "gpt-5.6-luna"
     assert settings.effort is ReasoningEffort.XHIGH
     assert settings.interval_minutes == 60
-    assert settings.limit == 2
+    assert settings.limit == 10
     assert settings.expires_at == expires_at
-    assert settings.max_sessions_total == 9
+    assert settings.max_sessions_total == 506
     assert settings.sessions_reserved == 4
     assert len(scheduler.installs) == 1
 
