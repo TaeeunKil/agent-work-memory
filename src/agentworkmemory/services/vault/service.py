@@ -10,7 +10,15 @@ from pathlib import Path
 import yaml
 
 from agentworkmemory.integrations.processes import hidden_process_creation_flags
-from agentworkmemory.services.frontmatter import FRONTMATTER, split_frontmatter
+from agentworkmemory.services.frontmatter import (
+    FRONTMATTER,
+    merge_frontmatter,
+    normalize_durable_markdown,
+    normalize_newlines,
+    peel_frontmatter_blocks,
+    render_frontmatter,
+    split_frontmatter,
+)
 from agentworkmemory.services.sessions.models import AgentEvent, AgentSession
 from agentworkmemory.services.vault.session_records import (
     SessionRecordBundle,
@@ -198,7 +206,12 @@ class VaultService:
                 ensure_inside(vault_path, target)
                 originals[relative] = target.read_bytes() if target.is_file() else None
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(read_vault_bytes(source))
+                payload = read_vault_bytes(source)
+                if allowed_distill_path(relative):
+                    payload = normalize_durable_markdown(
+                        payload.decode("utf-8")
+                    ).encode("utf-8")
+                target.write_bytes(payload)
         except Exception:
             restore_originals(vault_path, originals)
             raise
@@ -309,10 +322,10 @@ def allowed_distill_path(relative: Path) -> bool:
 
 
 def validate_markdown_page(path: Path) -> None:
-    raw = read_vault_bytes(path).decode("utf-8")
+    raw = normalize_durable_markdown(read_vault_bytes(path).decode("utf-8"))
     body = raw
     metadata: dict[object, object] = {}
-    if raw.startswith(("---\n", "---\r\n")):
+    if raw.startswith("---\n"):
         match = FRONTMATTER.match(raw)
         if match is None:
             raise ValueError(f"unterminated frontmatter: {path.name}")
@@ -329,19 +342,18 @@ def validate_markdown_page(path: Path) -> None:
 
 
 def preserve_existing_frontmatter(original: str, current: str) -> str:
-    original_metadata, _ = split_frontmatter(original)
+    original_metadata, _ = peel_frontmatter_blocks(original)
     if not original_metadata:
-        return current
+        return normalize_durable_markdown(current)
     try:
-        current_metadata, body = split_frontmatter(current)
+        current_metadata, body = peel_frontmatter_blocks(current)
     except yaml.YAMLError:
-        match = FRONTMATTER.match(current)
+        match = FRONTMATTER.match(normalize_newlines(current))
         if match is None:
             raise
         current_metadata = {}
-        body = current[match.end() :]
-    merged = dict(original_metadata)
-    merged.update(current_metadata)
+        body = normalize_newlines(current)[match.end() :]
+    merged = merge_frontmatter(original_metadata, current_metadata)
     for key in ("short_title_ko", "short_title_en"):
         value = current_metadata.get(key)
         if isinstance(value, str) and value.strip():
@@ -349,14 +361,7 @@ def preserve_existing_frontmatter(original: str, current: str) -> str:
         original_value = original_metadata.get(key)
         if isinstance(original_value, str) and original_value.strip():
             merged[key] = original_value
-    if merged == current_metadata:
-        return current
-    frontmatter = yaml.safe_dump(
-        merged,
-        allow_unicode=True,
-        sort_keys=False,
-    ).rstrip()
-    return f"---\n{frontmatter}\n---\n{body.lstrip()}".rstrip() + "\n"
+    return render_frontmatter(merged, body)
 
 
 def restore_originals(root: Path, originals: dict[Path, bytes | None]) -> None:

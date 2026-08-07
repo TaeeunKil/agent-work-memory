@@ -10,6 +10,8 @@
 - Windows schedules named `AWM Sync` and `AWM Auto Distill`.
 - Linux systemd user timers named `awm-sync.timer` and `awm-auto-distill.timer`
   for `awm auto` and `awm auto-distill`.
+- Durable Wiki Markdown normalization that collapses stacked/CRLF frontmatter
+  blocks left by repeated distill merges.
 
 ### Changed
 
@@ -19,6 +21,8 @@
   metadata now use Agent Work Memory terminology.
 - Documentation now describes Linux systemd user timers alongside Windows Task
   Scheduler instead of saying scheduled commands are Linux-manual-only.
+- Distill frontmatter preservation now rewrites a single clean frontmatter
+  block instead of restacking curator metadata on corrupt page bodies.
 
 ### Historical upstream releases
 
