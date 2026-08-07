@@ -8,10 +8,10 @@ machines, keeps the evidence searchable, and promotes selected work into durable
 pages for projects, decisions, systems, problems, procedures, and unfinished
 work.
 
-> AWM is currently an alpha installed from this source repository. The complete
-> automatic-sync and automatic-distillation experience is implemented for
-> Windows. The core CLI can run on macOS or Linux, but scheduled commands must be
-> run manually there.
+> AWM is currently an alpha installed from this source repository. Automatic
+> sync and automatic distillation are implemented for Windows (Task Scheduler)
+> and Linux (systemd user timers). On macOS, scheduled commands must still be
+> run manually.
 
 ## What gets installed
 
@@ -364,21 +364,38 @@ and confirm that `ollama list` shows the requested model.
 
 ### Automatic sync is unavailable
 
-Windows Task Scheduler provides `AWM Sync` and `AWM Auto Distill`. Automatic
-scheduling is not implemented on macOS or Linux; run `awm sync` and `awm
-auto-distill run` from your own scheduler there.
+Windows uses Task Scheduler tasks named `AWM Sync` and `AWM Auto Distill`.
+Linux uses systemd user timers named `awm-sync.timer` and
+`awm-auto-distill.timer`. Automatic scheduling is not implemented on macOS; run
+`awm sync` and `awm auto-distill run` from your own scheduler there.
 
-On Windows, inspect the registered tasks and AWM status:
+Inspect status on any supported platform:
 
 ```powershell
+# Windows
 Get-ScheduledTask -TaskName 'AWM Sync','AWM Auto Distill' -ErrorAction SilentlyContinue
 awm auto status
 awm auto-distill status
 ```
 
-Always install AWM with `uv tool install`. AWM validates that Windows background
-tasks use a real GUI-subsystem Python runtime and refuses console-backed launchers
-that would flash a terminal window.
+```bash
+# Linux
+systemctl --user list-timers 'awm-*'
+awm auto status
+awm auto-distill status
+```
+
+On Linux, `awm auto install` and `awm auto-distill install` write units under
+`~/.config/systemd/user/` and enable them with `systemctl --user`. Linger may be
+required for timers to run while you are logged out:
+
+```bash
+loginctl enable-linger "$USER"
+```
+
+Always install AWM with `uv tool install`. On Windows, AWM validates that
+background tasks use a real GUI-subsystem Python runtime and refuses
+console-backed launchers that would flash a terminal window.
 
 ## Contributor setup
 

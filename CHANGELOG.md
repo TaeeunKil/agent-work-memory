@@ -8,6 +8,8 @@
   performed with Codex, Claude, remote SSH hosts, and imported agent records.
 - The `awm` and `agent-work-memory` commands.
 - Windows schedules named `AWM Sync` and `AWM Auto Distill`.
+- Linux systemd user timers named `awm-sync.timer` and `awm-auto-distill.timer`
+  for `awm auto` and `awm auto-distill`.
 
 ### Changed
 
@@ -15,6 +17,8 @@
 - The default Windows state directory is `%LOCALAPPDATA%\AgentWorkMemory`.
 - The local viewer, generated Wiki navigation, documentation, and repository
   metadata now use Agent Work Memory terminology.
+- Documentation now describes Linux systemd user timers alongside Windows Task
+  Scheduler instead of saying scheduled commands are Linux-manual-only.
 
 ### Historical upstream releases
 

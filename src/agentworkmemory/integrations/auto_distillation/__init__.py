@@ -1,5 +1,9 @@
 import os
+import sys
 
+from agentworkmemory.integrations.auto_distillation.systemd import (
+    SystemdAutoDistillSchedulerAdapter,
+)
 from agentworkmemory.integrations.auto_distillation.unsupported import (
     UnsupportedAutoDistillSchedulerAdapter,
 )
@@ -14,6 +18,8 @@ from agentworkmemory.services.auto_distillation.ports import (
 def default_auto_distill_scheduler_adapter() -> AutoDistillSchedulerAdapter:
     if os.name == "nt":
         return WindowsAutoDistillSchedulerAdapter()
+    if sys.platform.startswith("linux"):
+        return SystemdAutoDistillSchedulerAdapter()
     return UnsupportedAutoDistillSchedulerAdapter()
 
 
