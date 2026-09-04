@@ -295,7 +295,7 @@ def create_app(
             auto_distill_publisher
             if auto_distill_publisher is not None
             else (
-                vault_repository.sync
+                vault_repository.publish_automatic
                 if resolved.vault_path is not None
                 and (resolved.vault_path / ".git").exists()
                 else None

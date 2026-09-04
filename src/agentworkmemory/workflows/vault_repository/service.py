@@ -79,6 +79,14 @@ class VaultRepositoryWorkflow:
                 result = follow_up
             return result
 
+    def publish_automatic(self, message: str) -> VaultRepositoryResult:
+        """Commit and push without rebuilding derived local views."""
+        with vault_synchronization_lock(
+            self.sync_lock_path,
+            wait_seconds=self.sync_wait_seconds,
+        ):
+            return self.repository.sync(message)
+
     def refresh_local_views(self) -> None:
         self.wiki.refresh()
         self.search.refresh()

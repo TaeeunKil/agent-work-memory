@@ -97,6 +97,22 @@ def test_publish_and_sync_record_every_vault_change(tmp_path: Path):
     ]
 
 
+def test_automatic_publish_skips_derived_view_refresh(tmp_path: Path):
+    adapter = FakeVaultRepositoryAdapter()
+    app = repository_app(tmp_path, adapter)
+    vault = app.vault.initialize(tmp_path / "vault")
+    (vault / "projects" / "one.md").write_text("# One\n")
+
+    published = app.vault_repository.publish_automatic("Automatic update")
+
+    assert published.committed
+    assert adapter.calls[-3:] == [
+        ("commit_all", (vault, "Automatic update")),
+        ("pull_rebase", vault),
+        ("push", vault),
+    ]
+
+
 def test_vault_cli_status_and_sync(tmp_path: Path, capsys):
     adapter = FakeVaultRepositoryAdapter()
     app = repository_app(tmp_path, adapter)

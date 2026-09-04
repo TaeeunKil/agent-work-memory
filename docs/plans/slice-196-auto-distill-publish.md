@@ -12,7 +12,7 @@ keeping translation and publication outside the curator workspace.
   the configured Vault is already a Git repository.
 - Publish only batches that changed durable Wiki files, using the existing
   coordinated Vault sync path.
-- Avoid the redundant pre-sync Wiki/search refresh in the Vault Git sync path.
+- Avoid rebuilding derived Wiki/search views during automatic publication.
 - Add focused workflow coverage for automatic publication.
 
 ## Verification
