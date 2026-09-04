@@ -58,8 +58,10 @@ class FakeCurator:
     def __init__(
         self,
         status: CuratorRunStatus = CuratorRunStatus.SUCCEEDED,
+        write_path: Path | None = None,
     ):
         self.status = status
+        self.write_path = write_path
         self.requests: list[CuratorRunRequest] = []
 
     def check(self) -> CuratorReadiness:
@@ -71,6 +73,18 @@ class FakeCurator:
 
     def run(self, request: CuratorRunRequest) -> CuratorRunResult:
         self.requests.append(request)
+        if self.write_path is not None:
+            target = request.vault_path / self.write_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(
+                "---\n"
+                "short_title_ko: 자동 지식\n"
+                "short_title_en: Automatic knowledge\n"
+                "language: en\n"
+                "---\n"
+                "# Automatically published knowledge\n",
+                encoding="utf-8",
+            )
         return CuratorRunResult(
             runtime=self.runtime,
             status=self.status,
@@ -297,6 +311,38 @@ def test_auto_distill_run_with_empty_queue_is_a_successful_noop(
     assert dispatch(args, app) == 0
     assert curator.requests == []
     assert "No captured sessions" in capsys.readouterr().out
+
+
+def test_auto_distill_publishes_durable_changes_after_releasing_sync_lock(
+    tmp_path: Path,
+):
+    scheduler = FakeAutoDistillScheduler()
+    curator = FakeCurator(write_path=Path("projects/automatic.md"))
+    published: list[str] = []
+
+    def publish(message: str) -> None:
+        with FileLock(tmp_path / "state" / "sync.lock", timeout=0):
+            published.append(message)
+
+    app = auto_distill_app(tmp_path, scheduler, curator, publish)
+    app.vault.initialize(tmp_path / "vault")
+    (tmp_path / "vault" / ".git").mkdir()
+    add_note(app, "Knowledge to publish automatically.")
+    app.auto_distillation.install(
+        AutoDistillSettings(
+            interval_minutes=60,
+            limit=1,
+            runtime="codex",
+            content_access=ContentAccess.SELECTED_REMOTE,
+            expires_at=datetime.now(UTC) + timedelta(days=1),
+            max_sessions_total=1,
+        )
+    )
+
+    receipt = app.auto_distill.run()
+
+    assert receipt.state.value == "succeeded"
+    assert published == ["Distill Agent Work Memory Vault (automatic)"]
 
 
 def test_auto_distill_waits_for_sync_then_continues(
@@ -545,6 +591,7 @@ def auto_distill_app(
     tmp_path: Path,
     scheduler: FakeAutoDistillScheduler,
     curator: FakeCurator,
+    publisher=None,
 ):
     return create_app(
         AgentWorkMemoryConfig(
@@ -553,6 +600,7 @@ def auto_distill_app(
         ),
         curator_adapters=(curator,),
         auto_distill_scheduler_adapter=scheduler,
+        auto_distill_publisher=publisher,
     )
 
 

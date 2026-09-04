@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from agentworkmemory.database import open_database
 from agentworkmemory.integrations.auto_distillation import (
@@ -149,6 +149,7 @@ def create_app(
     vault_repository_adapter: VaultRepositoryAdapter | None = None,
     ollama_url: str | None = None,
     improvement_proposer: ImprovementProposer | None = None,
+    auto_distill_publisher: Callable[[str], object] | None = None,
 ) -> AgentWorkMemory:
     resolved = config or load_config()
     with open_database(resolved.database_path):
@@ -290,6 +291,16 @@ def create_app(
         distill,
         translate,
         distill_coordination,
+        publish=(
+            auto_distill_publisher
+            if auto_distill_publisher is not None
+            else (
+                vault_repository.sync
+                if resolved.vault_path is not None
+                and (resolved.vault_path / ".git").exists()
+                else None
+            )
+        ),
     )
     return AgentWorkMemory(
         automation=automation,

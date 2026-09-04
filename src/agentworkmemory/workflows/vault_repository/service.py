@@ -72,7 +72,6 @@ class VaultRepositoryWorkflow:
             self.sync_lock_path,
             wait_seconds=self.sync_wait_seconds,
         ):
-            self.refresh_local_views()
             result = self.repository.sync(message)
             self.refresh_local_views()
             follow_up = self.repository.push(message)

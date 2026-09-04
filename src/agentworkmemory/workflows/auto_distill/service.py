@@ -23,6 +23,8 @@ from agentworkmemory.workflows.translate import (
     TranslateWikiWorkflow,
 )
 
+AUTO_DISTILL_COMMIT_MESSAGE = "Distill Agent Work Memory Vault (automatic)"
+
 
 class AutoDistillWorkflow:
     def __init__(
@@ -32,12 +34,14 @@ class AutoDistillWorkflow:
         distill: DistillSessionsWorkflow,
         translate: TranslateWikiWorkflow,
         coordination: DistillCoordination,
+        publish: Callable[[str], object] | None = None,
     ):
         self.automation = automation
         self.sessions = sessions
         self.distill = distill
         self.translate = translate
         self.coordination = coordination
+        self.publish = publish
 
     def run(
         self,
@@ -79,6 +83,17 @@ class AutoDistillWorkflow:
                     self.automation.reserve_sessions(len(session_ids))
                     receipt = self.distill.run(request)
                     self.translate_pending(settings, progress)
+                if self.publish is not None and receipt.changed_files:
+                    report_progress(
+                        progress,
+                        "Publishing automatic distillation to the Vault Git "
+                        "repository.",
+                    )
+                    self.publish(AUTO_DISTILL_COMMIT_MESSAGE)
+                    report_progress(
+                        progress,
+                        "Automatic distillation was committed and pushed.",
+                    )
         except DistillationAlreadyRunning:
             report_progress(
                 progress,
