@@ -81,7 +81,13 @@ class SessionsService:
                 content_captured=(
                     existing.content_captured if existing is not None else False
                 ),
+                content_revision=(
+                    existing.content_revision if existing is not None else 0
+                ),
                 distilled_at=(existing.distilled_at if existing is not None else None),
+                distilled_revision=(
+                    existing.distilled_revision if existing is not None else 0
+                ),
                 distill_runtime=(
                     existing.distill_runtime if existing is not None else None
                 ),

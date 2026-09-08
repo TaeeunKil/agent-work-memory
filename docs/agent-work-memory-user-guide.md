@@ -199,6 +199,12 @@ number of captured, not-yet-distilled sessions. Automatic sync remains a
 separate evidence-only task, and curator failures use the same validated
 workspace and rollback path as manual distillation.
 
+When a captured session receives new transcript events, AWM advances its
+content revision and puts it back in the distillation queue. Metadata-only
+observations do not trigger another run. The first re-distillation pass reads
+the full session and merges it into existing durable pages, so repeated passes
+do not create duplicate topics.
+
 The standing grant expires after 7 days or 24 reserved session attempts by
 default, whichever comes first. An attempt consumes its allowance before the
 curator runs, even if that run later fails. Narrow it further when desired:

@@ -24,9 +24,9 @@ class SessionsStore:
                 INSERT INTO agent_sessions (
                   session_id, provider, provider_session_id, title, cwd,
                   source_path, started_at, ended_at, modified_at, state,
-                  content_captured, distilled_at, distill_runtime, created_at,
-                  updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  content_captured, content_revision, distilled_at,
+                  distilled_revision, distill_runtime, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                   title = excluded.title,
                   cwd = excluded.cwd,
@@ -39,7 +39,12 @@ class SessionsStore:
                     agent_sessions.content_captured,
                     excluded.content_captured
                   ),
+                  content_revision = MAX(
+                    agent_sessions.content_revision,
+                    excluded.content_revision
+                  ),
                   distilled_at = agent_sessions.distilled_at,
+                  distilled_revision = agent_sessions.distilled_revision,
                   distill_runtime = agent_sessions.distill_runtime,
                   updated_at = excluded.updated_at
                 """,
@@ -70,6 +75,8 @@ class SessionsStore:
             )
             inserted = connection.total_changes - before
             finish_capture(connection, session_id, cursor)
+            if inserted > 0:
+                advance_content_revision(connection, session_id)
             connection.commit()
         return inserted
 
@@ -94,6 +101,7 @@ class SessionsStore:
                 tuple(event_values(event) for event in events),
             )
             finish_capture(connection, session_id, cursor)
+            advance_content_revision(connection, session_id)
             connection.commit()
         return len(events)
 
@@ -201,7 +209,10 @@ class SessionsStore:
             connection.executemany(
                 """
                 UPDATE agent_sessions
-                SET distilled_at = ?, distill_runtime = ?, updated_at = ?
+                SET distilled_at = ?,
+                    distilled_revision = content_revision,
+                    distill_runtime = ?,
+                    updated_at = ?
                 WHERE session_id = ?
                 """,
                 tuple(
@@ -270,6 +281,21 @@ def finish_capture(
     )
 
 
+def advance_content_revision(
+    connection: Connection,
+    session_id: str,
+) -> None:
+    connection.execute(
+        """
+        UPDATE agent_sessions
+        SET content_revision = content_revision + 1,
+            updated_at = ?
+        WHERE session_id = ?
+        """,
+        (datetime.now(UTC).isoformat(), session_id),
+    )
+
+
 def session_values(session: AgentSession) -> tuple[object, ...]:
     return (
         session.session_id,
@@ -283,11 +309,13 @@ def session_values(session: AgentSession) -> tuple[object, ...]:
         session.modified_at.isoformat(),
         session.state.value,
         int(session.content_captured),
+        session.content_revision,
         (
             session.distilled_at.isoformat()
             if session.distilled_at is not None
             else None
         ),
+        session.distilled_revision,
         session.distill_runtime,
         session.created_at.isoformat(),
         session.updated_at.isoformat(),
@@ -332,11 +360,13 @@ def session_from_row(row: object) -> AgentSession:
         modified_at=datetime.fromisoformat(row["modified_at"]),
         state=SessionState(row["state"]),
         content_captured=bool(row["content_captured"]),
+        content_revision=row["content_revision"],
         distilled_at=(
             datetime.fromisoformat(row["distilled_at"])
             if row["distilled_at"] is not None
             else None
         ),
+        distilled_revision=row["distilled_revision"],
         distill_runtime=row["distill_runtime"],
         created_at=datetime.fromisoformat(row["created_at"]),
         updated_at=datetime.fromisoformat(row["updated_at"]),

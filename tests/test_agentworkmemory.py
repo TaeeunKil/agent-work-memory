@@ -1,5 +1,6 @@
 import json
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 
 from agentworkmemory.app import create_app
@@ -201,6 +202,53 @@ def test_appended_transcript_lines_advance_per_source_cursor(tmp_path: Path):
     assert second.events_added == 1
     events = app.sessions.events(first.session_ids[0])
     assert [event.source_line for event in events] == [2, 3, 4]
+
+
+def test_appended_transcript_events_requeue_an_already_distilled_session(
+    tmp_path: Path,
+):
+    app = isolated_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    transcript = write_codex_transcript(home, tmp_path / "workspace")
+    request = CollectAgentRecords(
+        providers=(AgentProvider.CODEX,),
+        home=home,
+        include_content=True,
+    )
+
+    first = app.collect.collect(request)
+    app.sessions.mark_distilled(
+        first.session_ids,
+        runtime="test-curator",
+        distilled_at=datetime.now(UTC),
+    )
+    before = app.sessions.get(first.session_ids[0])
+    assert before.content_revision == before.distilled_revision
+    assert not app.sessions.distillation_candidates()
+
+    with transcript.open("a", encoding="utf-8") as file:
+        file.write(
+            json.dumps(
+                {
+                    "timestamp": "2026-07-27T04:00:00Z",
+                    "payload": {"message": "Record the final result."},
+                }
+            )
+            + "\n"
+        )
+
+    second = app.collect.collect(request)
+    after = app.sessions.get(first.session_ids[0])
+
+    assert second.events_added == 1
+    assert after.content_revision == before.content_revision + 1
+    assert after.distilled_revision == before.distilled_revision
+    assert after.distilled_at is not None
+    assert first.session_ids[0] in {
+        session.session_id
+        for session in app.sessions.distillation_candidates()
+    }
 
 
 def test_imports_open_provider_record_bundle_into_wiki(tmp_path: Path):

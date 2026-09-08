@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from agentworkmemory.services.frontmatter import split_frontmatter
+from agentworkmemory.services.sessions.distillation import needs_distillation
 from agentworkmemory.services.sessions.models import AgentSession
 from agentworkmemory.services.sessions.service import SessionsService
 from agentworkmemory.services.translations.service import page_locale
@@ -196,7 +197,7 @@ def render_home(
     pending = tuple(
         session
         for session in sessions
-        if session.content_captured and session.distilled_at is None
+        if needs_distillation(session)
     )
     lines.extend(("", "## Waiting to be distilled", ""))
     for session in pending[:12]:

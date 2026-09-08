@@ -2,6 +2,16 @@ from pathlib import Path
 
 from agentworkmemory.services.sessions.models import AgentSession
 
+
+def needs_distillation(session: AgentSession) -> bool:
+    return (
+        session.content_captured
+        and (
+            session.distilled_at is None
+            or session.content_revision > session.distilled_revision
+        )
+    )
+
 INTERNAL_WORKSPACE_PARTS = frozenset(
     {
         ".acl-probe",
@@ -18,8 +28,7 @@ def is_distillation_candidate(
     state_root: Path,
 ) -> bool:
     return (
-        session.content_captured
-        and session.distilled_at is None
+        needs_distillation(session)
         and not is_internal_workspace(session.cwd, state_root)
     )
 

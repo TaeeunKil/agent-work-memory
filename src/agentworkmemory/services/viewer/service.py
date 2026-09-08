@@ -8,6 +8,7 @@ from markdown_it import MarkdownIt
 from agentworkmemory.services.activity.models import ActivityTask
 from agentworkmemory.services.auto_distillation.service import AutoDistillationService
 from agentworkmemory.services.automation.service import AutomationService
+from agentworkmemory.services.sessions.distillation import needs_distillation
 from agentworkmemory.services.sessions.models import AgentSession
 from agentworkmemory.services.sessions.service import SessionsService
 from agentworkmemory.services.synchronization.service import SynchronizationService
@@ -257,6 +258,7 @@ class ViewerService:
             modified_at=session.modified_at,
             content_captured=session.content_captured,
             distilled_at=session.distilled_at,
+            needs_distillation=needs_distillation(session),
             event_count=count,
         )
 

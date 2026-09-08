@@ -65,6 +65,8 @@ def test_sync_is_locked_incremental_and_searchable(tmp_path: Path):
     )
 
     first = app.sync.run(request)
+    (session,) = app.sessions.list()
+    revision = session.content_revision
     second = app.sync.run(request)
 
     assert first.status is SyncStatus.SUCCEEDED
@@ -72,6 +74,7 @@ def test_sync_is_locked_incremental_and_searchable(tmp_path: Path):
     assert first.events_added == 2
     assert second.status is SyncStatus.SUCCEEDED
     assert second.events_added == 0
+    assert app.sessions.get(session.session_id).content_revision == revision
     assert app.synchronization.latest() == second
     assert any(result.kind == "session" for result in app.search.find("decision"))
 
@@ -149,6 +152,12 @@ def test_sync_replays_events_when_normalizer_version_changes(tmp_path: Path):
     )
     app.sync.run(request)
     (session,) = app.sessions.list()
+    app.sessions.mark_distilled(
+        (session.session_id,),
+        runtime="test-curator",
+        distilled_at=datetime.now(UTC),
+    )
+    before = app.sessions.get(session.session_id)
     with sqlite3.connect(app.sessions.store.database_path) as connection:
         connection.execute(
             "UPDATE collector_cursors SET normalizer_version = 'legacy'"
@@ -170,6 +179,11 @@ def test_sync_replays_events_when_normalizer_version_changes(tmp_path: Path):
     replay = app.sync.run(request)
 
     assert replay.events_added == 6
+    after = app.sessions.get(session.session_id)
+    assert after.content_revision == before.content_revision + 1
+    assert session.session_id in {
+        item.session_id for item in app.sessions.distillation_candidates()
+    }
     events = app.sessions.events(session.session_id)
     assert len(events) == 6
     assert all(event.event_id != "evt_stale" for event in events)

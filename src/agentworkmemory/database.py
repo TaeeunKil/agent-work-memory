@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   modified_at         TEXT NOT NULL,
   state               TEXT NOT NULL,
   content_captured    INTEGER NOT NULL DEFAULT 0,
+  content_revision    INTEGER NOT NULL DEFAULT 0,
   distilled_at        TEXT,
+  distilled_revision  INTEGER NOT NULL DEFAULT 0,
   distill_runtime     TEXT,
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,
@@ -103,6 +105,18 @@ def connect(path: Path) -> sqlite3.Connection:
     connection.execute("PRAGMA journal_mode = WAL")
     connection.executescript(SCHEMA)
     ensure_column(connection, "agent_sessions", "distilled_at", "TEXT")
+    ensure_column(
+        connection,
+        "agent_sessions",
+        "content_revision",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    ensure_column(
+        connection,
+        "agent_sessions",
+        "distilled_revision",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
     ensure_column(connection, "agent_sessions", "distill_runtime", "TEXT")
     ensure_column(
         connection,

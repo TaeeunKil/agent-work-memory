@@ -11,6 +11,7 @@ from agentworkmemory.services.diagnostics.models import (
 )
 from agentworkmemory.services.remotes.models import RemoteSyncState
 from agentworkmemory.services.remotes.service import RemotesService
+from agentworkmemory.services.sessions.distillation import needs_distillation
 from agentworkmemory.services.sessions.service import SessionsService
 from agentworkmemory.services.vault.service import VaultService
 from agentworkmemory.services.wiki.service import WikiCatalogService
@@ -160,7 +161,7 @@ def knowledge_check(
     pending = tuple(
         session
         for session in captured
-        if session.distilled_at is None
+        if needs_distillation(session)
     )
     try:
         durable = tuple(

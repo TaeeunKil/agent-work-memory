@@ -284,7 +284,7 @@ function renderProjects() {
 function renderOverview() {
   const recent = state.sessions.slice(0, 8);
   const pending = state.sessions.filter(
-    (session) => session.content_captured && !session.distilled_at,
+    (session) => session.needs_distillation,
   );
   workspace.innerHTML = `
     <header class="view-header">
@@ -1320,7 +1320,7 @@ async function openSession(sessionId, options = {}) {
     <div class="detail-meta">
       <span>${t("count.events", { count: detail.session.event_count })}</span>
       <span>${detail.session.content_captured ? t("session.contentRetained") : t("session.metadataOnly")}</span>
-      <span>${detail.session.distilled_at ? t("session.distilled") : t("session.notDistilled")}</span>
+      <span>${detail.session.needs_distillation ? t("session.notDistilled") : t("session.distilled")}</span>
     </div>
     ${detail.workspace ? `<p class="quiet">${escapeHtml(detail.workspace)}</p>` : ""}
     ${detail.session.content_captured ? distillControls(detail.session.session_id) : ""}

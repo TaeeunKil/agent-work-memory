@@ -3,7 +3,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import StringConstraints, field_validator
+from pydantic import Field, StringConstraints, field_validator
 
 from agentworkmemory.core import AgentWorkMemoryModel
 
@@ -60,7 +60,9 @@ class AgentSession(AgentWorkMemoryModel):
     modified_at: datetime
     state: SessionState = SessionState.OPEN
     content_captured: bool = False
+    content_revision: int = Field(default=0, ge=0)
     distilled_at: datetime | None = None
+    distilled_revision: int = Field(default=0, ge=0)
     distill_runtime: str | None = None
     created_at: datetime
     updated_at: datetime

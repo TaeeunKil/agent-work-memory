@@ -31,6 +31,7 @@ class ViewerSession(AgentWorkMemoryModel):
     modified_at: datetime
     content_captured: bool
     distilled_at: datetime | None
+    needs_distillation: bool
     event_count: int
 
 
