@@ -187,6 +187,11 @@ The viewer opens at `http://127.0.0.1:3928` and binds only to loopback.
 
 ## Distill sessions into the Wiki
 
+Resuming a retained conversation makes it pending again only when collection
+captures new events. Distillation reviews the full retained conversation and
+merges evidence into existing Wiki pages. Content captured while a review is
+running remains pending for the next review; unchanged reads do not requeue it.
+
 First test a small manual run. Remote curator access to selected transcript
 bodies must be explicit:
 
@@ -217,7 +222,9 @@ awm auto-distill install `
   --allow-remote-content
 ```
 
-The standing grant is bounded by time and reserved-session count. A curator
+The standing grant is bounded by time and reserved-session count. An expired
+or exhausted grant makes `awm auto-distill run` exit with status 1 so scheduled
+work does not appear healthy while it is blocked. A curator
 attempt consumes its reservation even when the model output later fails
 validation. Inspect or remove it with:
 

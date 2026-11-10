@@ -130,6 +130,54 @@ def test_distill_promotes_session_into_durable_wiki(tmp_path: Path):
     assert "Use one central writer" not in (stored.output_summary or "")
 
 
+def test_distill_leaves_events_arriving_during_review_pending(tmp_path: Path):
+    adapter = FakeCuratorAdapter()
+    app = distill_app(tmp_path, adapter)
+    vault = app.vault.initialize(tmp_path / "vault")
+    session = note_session(app, "Original decision.")
+    before = app.sessions.get(session.session_id)
+
+    def append_during_review(request):
+        event = app.sessions.events(session.session_id)[0].model_copy(
+            update={
+                "event_id": "evt_new_during_review",
+                "source_line": 2,
+                "sequence": 2,
+                "content": "New follow-up after review started.",
+            }
+        )
+        app.sessions.append_events(
+            session.session_id,
+            (event,),
+            CollectorCursor(
+                source_id="src_concurrent",
+                provider=session.provider,
+                source_path=tmp_path / "source",
+                last_line=2,
+                size_bytes=100,
+                updated_at=datetime.now(UTC),
+            ),
+        )
+        write_decision(request)
+
+    adapter.mutate = append_during_review
+    app.distill.run(
+        DistillSessions(
+            session_ids=(session.session_id,),
+            runtime=adapter.runtime,
+            content_access=ContentAccess.SELECTED_LOCAL,
+        )
+    )
+    after = app.sessions.get(session.session_id)
+    assert after.distilled_revision == before.content_revision
+    assert after.content_revision > after.distilled_revision
+    assert session.session_id in {
+        s.session_id for s in app.sessions.distillation_candidates()
+    }
+    page = next((vault / "inbox/agent-sessions").glob("manual-*.md"))
+    assert "New follow-up after review started." in page.read_text(encoding="utf-8")
+
+
 def test_distill_repairs_existing_frontmatter_omitted_by_curator(tmp_path: Path):
     adapter = FakeCuratorAdapter(mutate=rewrite_decision_without_korean_title)
     app = distill_app(tmp_path, adapter)
@@ -656,6 +704,47 @@ def test_windows_yoke_curator_applies_json_handoff(
     assert not (vault / ".awm-curator-output.json").exists()
 
 
+@pytest.mark.parametrize(
+    "handoff, expected",
+    (
+        (None, CuratorRunStatus.FAILED),
+        ("{}", CuratorRunStatus.FAILED),
+        ('{"files":[]}', CuratorRunStatus.SUCCEEDED),
+    ),
+)
+def test_windows_curator_requires_explicit_handoff(
+    tmp_path, monkeypatch, handoff, expected
+):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    adapter = YokeCuratorAdapter("codex", tmp_path / "state/curators/codex")
+
+    class Harness:
+        def run_sync(self, prompt, options):
+            if handoff is not None:
+                (vault / ".awm-curator-output.json").write_text(
+                    handoff, encoding="utf-8"
+                )
+            return SimpleNamespace(
+                status="succeeded",
+                output="Finished",
+                failure=None,
+                provider_session_id="test",
+            )
+
+    monkeypatch.setattr(yoke_curator, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(adapter, "harness", lambda cwd: Harness())
+    result = adapter.run(
+        CuratorRunRequest(
+            runtime="codex",
+            vault_path=vault,
+            prompt="Review.",
+            content_access=ContentAccess.SELECTED_REMOTE,
+        )
+    )
+    assert result.status is expected
+
+
 def test_windows_yoke_repairs_handoff_permissions_before_reading(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -785,9 +874,7 @@ def test_windows_yoke_curator_prefers_standalone_install(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    executable = (
-        tmp_path / "Programs/OpenAI/Codex/bin/codex.exe"
-    )
+    executable = tmp_path / "Programs/OpenAI/Codex/bin/codex.exe"
     executable.parent.mkdir(parents=True)
     executable.touch()
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
@@ -870,6 +957,8 @@ def test_windows_codex_cli_buffers_process_without_asyncio_pipes(
     monkeypatch: pytest.MonkeyPatch,
 ):
     captured = {}
+    monkeypatch.setenv("CODEX_WINDOWS_REGISTERED_CORE", "1")
+    monkeypatch.setenv("CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY", "Desktop.Package")
 
     def fake_run(command, **kwargs):
         captured["command"] = command
@@ -903,6 +992,8 @@ def test_windows_codex_cli_buffers_process_without_asyncio_pipes(
     assert captured["stdout"] == asyncio.subprocess.PIPE
     assert captured["stderr"] == asyncio.subprocess.PIPE
     assert captured["creationflags"] == WINDOWS_CREATE_NO_WINDOW
+    assert "CODEX_WINDOWS_REGISTERED_CORE" not in captured["env"]
+    assert "CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY" not in captured["env"]
 
 
 def test_remote_yoke_curator_rejects_selected_local_content(tmp_path: Path):

@@ -114,7 +114,8 @@ class YokeCuratorAdapter:
         stage = "prepare-handoff"
         try:
             if output_path is not None:
-                output_path.write_text('{"files":[]}\n', encoding="utf-8")
+                # An untouched handoff is not an explicit successful no-op.
+                output_path.write_text('{}\n', encoding="utf-8")
             surface = curator_surface(self.runtime, sys.platform)
             stage = "run-provider"
             try:

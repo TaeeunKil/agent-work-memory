@@ -1076,6 +1076,7 @@ def dispatch_auto_distill(args: argparse.Namespace, app: AgentWorkMemory) -> int
                 "Automatic distillation standing grant is expired or exhausted; "
                 "run `awm auto-distill install` to grant a new bounded window."
             )
+            return 1
         elif receipt.state is AutoDistillRunState.DISTILLATION_RUNNING:
             print(
                 "Automatic distillation skipped because another Wiki "

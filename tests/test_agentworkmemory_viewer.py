@@ -403,7 +403,7 @@ def test_pending_viewer_batch_stays_with_one_workspace_and_can_be_requeued(
     second_a = app.sessions.add_manual_note("Second A", cwd=project_a)
     latest_b = app.sessions.add_manual_note("Latest B", cwd=project_b)
     app.sessions.mark_distilled(
-        (initial.session_id,),
+        (initial,),
         runtime="viewer-local",
         distilled_at=datetime.now(UTC),
     )
@@ -412,7 +412,7 @@ def test_pending_viewer_batch_stays_with_one_workspace_and_can_be_requeued(
 
     assert batch == (latest_b,)
     app.sessions.mark_distilled(
-        (second_a.session_id,),
+        (second_a,),
         runtime="viewer-local",
         distilled_at=datetime.now(UTC),
     )

@@ -27,7 +27,9 @@ class SystemdAutoDistillSchedulerAdapter:
     timer_unit = TIMER_UNIT
 
     def available(self) -> bool:
-        return sys.platform.startswith("linux") and shutil.which("systemctl") is not None
+        return (
+            sys.platform.startswith("linux") and shutil.which("systemctl") is not None
+        )
 
     def install(self, settings: AutoDistillSettings, state_dir: Path) -> None:
         units = user_unit_dir()

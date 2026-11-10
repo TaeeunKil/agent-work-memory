@@ -19,7 +19,9 @@ class SystemdSchedulerAdapter:
     timer_unit = TIMER_UNIT
 
     def available(self) -> bool:
-        return sys.platform.startswith("linux") and shutil.which("systemctl") is not None
+        return (
+            sys.platform.startswith("linux") and shutil.which("systemctl") is not None
+        )
 
     def install(self, settings: AutoSyncSettings, state_dir: Path) -> None:
         units = user_unit_dir()
@@ -74,7 +76,9 @@ class SystemdSchedulerAdapter:
             raise RuntimeError("systemd user units could not remove collection")
 
 
-def scheduled_sync_command(settings: AutoSyncSettings, state_dir: Path) -> tuple[str, ...]:
+def scheduled_sync_command(
+    settings: AutoSyncSettings, state_dir: Path
+) -> tuple[str, ...]:
     command = [
         sys.executable,
         "-m",
@@ -133,8 +137,10 @@ def render_interval_timer(
 
 
 def systemd_quote(value: str) -> str:
-    if value == "" or any(character.isspace() for character in value) or any(
-        character in value for character in '"\\'
+    if (
+        value == ""
+        or any(character.isspace() for character in value)
+        or any(character in value for character in '"\\')
     ):
         escaped = value.replace("\\", "\\\\").replace('"', '\\"')
         return f'"{escaped}"'

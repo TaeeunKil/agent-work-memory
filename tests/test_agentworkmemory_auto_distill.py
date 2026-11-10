@@ -479,7 +479,7 @@ def test_auto_distill_stops_after_bounded_standing_grant(
     run = build_parser().parse_args(("auto-distill", "run"))
 
     assert dispatch(run, app) == 0
-    assert dispatch(run, app) == 0
+    assert dispatch(run, app) == 1
 
     assert len(curator.requests) == 1
     assert app.auto_distillation.settings().sessions_reserved == 1
@@ -511,7 +511,7 @@ def test_failed_auto_distill_attempt_still_consumes_standing_grant(
         dispatch(run, app)
     assert app.auto_distillation.settings().sessions_reserved == 1
 
-    assert dispatch(run, app) == 0
+    assert dispatch(run, app) == 1
     assert len(curator.requests) == 1
     assert "expired or exhausted" in capsys.readouterr().out
 

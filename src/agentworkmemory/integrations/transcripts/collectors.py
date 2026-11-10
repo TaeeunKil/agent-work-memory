@@ -50,7 +50,6 @@ class CodexTranscriptCollector:
                     path=path,
                     state=state,
                     normalizer_version=CODEX_NORMALIZER_VERSION,
-                    source_identity=f"codex:{session_id}",
                 )
                 existing = discovered.get(session_id)
                 if existing is None or candidate.state is SessionState.OPEN:
@@ -162,7 +161,6 @@ def discovered_session(
     path: Path,
     state: SessionState = SessionState.OPEN,
     normalizer_version: str = "legacy",
-    source_identity: str | None = None,
 ) -> DiscoveredAgentSession:
     stat = path.stat()
     return DiscoveredAgentSession(
@@ -178,7 +176,6 @@ def discovered_session(
             else None
         ),
         state=state,
-        source_identity=source_identity,
         normalizer_version=normalizer_version,
     )
 

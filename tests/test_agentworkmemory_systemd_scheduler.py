@@ -94,7 +94,11 @@ def test_render_systemd_units_quote_paths_and_interval():
         interval_minutes=7,
     )
 
-    assert 'ExecStart=/usr/bin/python3 -m agentworkmemory.scheduled --state-dir "/home/user/State Dir" sync --home /home/user --from cursor' in service
+    assert (
+        'ExecStart=/usr/bin/python3 -m agentworkmemory.scheduled '
+        '--state-dir "/home/user/State Dir" sync --home /home/user --from cursor'
+        in service
+    )
     assert "OnUnitActiveSec=7min" in timer
     assert "Unit=awm-sync.service" in timer
     assert "WantedBy=timers.target" in timer

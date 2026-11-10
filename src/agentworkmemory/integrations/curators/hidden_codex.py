@@ -137,6 +137,10 @@ class HiddenCodexCli(CodexCli):
             process_env = dict(os.environ)
             if self.env is not None:
                 process_env.update(self.env)
+            # A standalone CLI owns its sandbox. Desktop Core routing belongs
+            # to the parent app and cannot be reused by this CLI subprocess.
+            process_env.pop("CODEX_WINDOWS_REGISTERED_CORE", None)
+            process_env.pop("CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY", None)
             process_env.setdefault(ORIGINATOR_ENV, YOKE_ORIGINATOR)
             completed = await asyncio.to_thread(
                 subprocess.run,

@@ -2,7 +2,6 @@ from collections.abc import Callable
 from hashlib import sha256
 
 from agentworkmemory.integrations.transcripts.models import (
-    DiscoveredAgentSession,
     TranscriptCollector,
 )
 from agentworkmemory.services.sessions.distillation import is_internal_workspace
@@ -69,22 +68,17 @@ class CollectAgentRecordsWorkflow:
                 )
                 session_ids.append(session.session_id)
                 if request.include_content:
-                    source_id = stable_source_id(discovered)
+                    source_id = stable_source_id(session.session_id)
                     content_path = discovered.content_path or discovered.source_path
                     cursor = self.sessions.cursor_for(source_id)
-                    rebuild = (
-                        cursor is None and session.content_captured
-                    ) or (
+                    rebuild = (cursor is None and session.content_captured) or (
                         cursor is not None
                         and (
-                            cursor.normalizer_version
-                            != discovered.normalizer_version
+                            cursor.normalizer_version != discovered.normalizer_version
                             or discovered.size_bytes < cursor.size_bytes
                         )
                     )
-                    after_line = (
-                        0 if cursor is None or rebuild else cursor.last_line
-                    )
+                    after_line = 0 if cursor is None or rebuild else cursor.last_line
                     read = collector.read(
                         discovered,
                         work_session_id=session.session_id,
@@ -140,15 +134,10 @@ class CollectAgentRecordsWorkflow:
         )
 
 
-def stable_source_id(discovered: DiscoveredAgentSession) -> str:
-    content_path = (
-        discovered.source_identity
-        or str(discovered.content_path or discovered.source_path)
-    )
-    identity = (
-        f"{discovered.provider}\0"
-        f"{discovered.provider_session_id}\0{content_path}"
-    )
+def stable_source_id(session_id: str) -> str:
+    # A provider ID can appear in several retained source histories. The cursor
+    # follows the canonical AWM record, including archive/restore moves.
+    identity = f"session\0{session_id}"
     return f"src_{sha256(identity.encode()).hexdigest()[:24]}"
 
 
@@ -161,9 +150,7 @@ def combine_collection_receipts(
         events_added=sum(item.events_added for item in receipts),
         session_ids=tuple(
             dict.fromkeys(
-                session_id
-                for item in receipts
-                for session_id in item.session_ids
+                session_id for item in receipts for session_id in item.session_ids
             )
         ),
     )

@@ -15,6 +15,7 @@ from agentworkmemory.integrations.automation.windows import (
     scheduled_task_next_run,
     windows_executable_subsystem,
 )
+from agentworkmemory.integrations.transcripts.collectors import CodexTranscriptCollector
 from agentworkmemory.services.automation.models import AutoSyncSettings
 from agentworkmemory.services.sessions.models import (
     AgentEventKind,
@@ -77,6 +78,109 @@ def test_sync_is_locked_incremental_and_searchable(tmp_path: Path):
     assert app.sessions.get(session.session_id).content_revision == revision
     assert app.synchronization.latest() == second
     assert any(result.kind == "session" for result in app.search.find("decision"))
+
+
+def test_resumed_source_reuses_exact_record_with_multiple_missing_histories(
+    tmp_path: Path,
+):
+    app = sync_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    original = write_codex_transcript(home, tmp_path / "project")
+    request = SyncAgentRecords(
+        providers=(AgentProvider.CODEX,), home=home, include_content=True
+    )
+    app.sync.run(request)
+    (first,) = app.sessions.list()
+    # A second retained history exists while the first path still exists.
+    history = original.with_name("history.jsonl")
+    history.write_text(original.read_text(encoding="utf-8"), encoding="utf-8")
+    app.sessions.remember_discovered(
+        provider=AgentProvider.CODEX,
+        provider_session_id=first.provider_session_id,
+        cwd=first.cwd,
+        source_path=history,
+        modified_at=datetime.now(UTC),
+    )
+    original.unlink()
+    moved = original.with_name("resumed.jsonl")
+    history.replace(moved)
+    # Model a previously relocated row whose ID was derived from its old path.
+    with sqlite3.connect(app.sessions.store.database_path) as c:
+        c.execute(
+            "UPDATE agent_sessions SET source_path=? WHERE session_id=?",
+            (str(moved), first.session_id),
+        )
+    receipt = app.sync.run(request)
+    assert receipt.status is SyncStatus.SUCCEEDED
+    assert app.sessions.get(first.session_id).source_path == moved
+    assert len(app.sessions.list()) == 2
+    assert app.sync.run(request).events_added == 0
+
+
+def test_original_path_reappearing_does_not_take_over_live_relocated_session(
+    tmp_path: Path,
+):
+    app = sync_app(tmp_path)
+    original = tmp_path / "original.jsonl"
+    moved = tmp_path / "moved.jsonl"
+    original.touch()
+
+    def remember(path):
+        return app.sessions.remember_discovered(
+            provider=AgentProvider.CODEX,
+            provider_session_id="same-provider-id",
+            cwd=tmp_path,
+            source_path=path,
+            modified_at=datetime.now(UTC),
+        )
+
+    first = remember(original)
+    original.replace(moved)
+    assert remember(moved).session_id == first.session_id
+    original.touch()
+    second = remember(original)
+    assert second.session_id != first.session_id
+    assert remember(original).session_id == second.session_id
+    assert app.sessions.get(first.session_id).source_path == moved
+
+
+def test_codex_cursors_belong_to_retained_session_not_shared_provider_id(
+    tmp_path: Path,
+):
+    app = sync_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home_a, home_b = tmp_path / "a", tmp_path / "b"
+    write_codex_transcript(home_a, tmp_path / "project")
+    b = write_codex_transcript(home_b, tmp_path / "project")
+    b.write_text(
+        b.read_text(encoding="utf-8").replace(
+            "Keep this decision",
+            "A different and longer decision from the other source",
+        ),
+        encoding="utf-8",
+    )
+
+    def collect(home):
+        app.collect.collectors[AgentProvider.CODEX] = CodexTranscriptCollector(
+            home / ".codex/sessions"
+        )
+        return app.sync.run(
+            SyncAgentRecords(
+                providers=(AgentProvider.CODEX,), home=home, include_content=True
+            )
+        )
+
+    collect(home_a)
+    collect(home_b)
+    other = next(s for s in app.sessions.list() if s.source_path == b)
+    assert len(app.sessions.events(other.session_id)) == 2
+    assert (
+        "A different and longer decision"
+        in app.sessions.events(other.session_id)[0].content
+    )
+    assert collect(home_a).events_added == 0
+    assert collect(home_b).events_added == 0
 
 
 def test_sync_reports_coarse_progress(tmp_path: Path):
@@ -153,15 +257,13 @@ def test_sync_replays_events_when_normalizer_version_changes(tmp_path: Path):
     app.sync.run(request)
     (session,) = app.sessions.list()
     app.sessions.mark_distilled(
-        (session.session_id,),
+        (session,),
         runtime="test-curator",
         distilled_at=datetime.now(UTC),
     )
     before = app.sessions.get(session.session_id)
     with sqlite3.connect(app.sessions.store.database_path) as connection:
-        connection.execute(
-            "UPDATE collector_cursors SET normalizer_version = 'legacy'"
-        )
+        connection.execute("UPDATE collector_cursors SET normalizer_version = 'legacy'")
         connection.execute(
             """
             INSERT INTO agent_events (

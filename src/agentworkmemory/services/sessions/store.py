@@ -200,7 +200,7 @@ class SessionsStore:
 
     def mark_distilled(
         self,
-        session_ids: tuple[str, ...],
+        sessions: tuple[AgentSession, ...],
         *,
         runtime: str,
         distilled_at: datetime,
@@ -210,7 +210,7 @@ class SessionsStore:
                 """
                 UPDATE agent_sessions
                 SET distilled_at = ?,
-                    distilled_revision = content_revision,
+                    distilled_revision = MAX(distilled_revision, ?),
                     distill_runtime = ?,
                     updated_at = ?
                 WHERE session_id = ?
@@ -218,11 +218,12 @@ class SessionsStore:
                 tuple(
                     (
                         distilled_at.isoformat(),
+                        session.content_revision,
                         runtime,
                         distilled_at.isoformat(),
-                        session_id,
+                        session.session_id,
                     )
-                    for session_id in session_ids
+                    for session in sessions
                 ),
             )
             connection.commit()

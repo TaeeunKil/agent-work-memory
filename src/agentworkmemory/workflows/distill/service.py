@@ -97,18 +97,21 @@ class DistillSessionsWorkflow:
                 changed_files=changed,
             )
             distilled_at = datetime.now(UTC)
-            for session, events in selected:
-                projected = session.model_copy(
+            for session, _ in selected:
+                projected = self.sessions.get(session.session_id).model_copy(
                     update={
                         "distilled_at": distilled_at,
                         "distill_runtime": request.runtime,
+                        "distilled_revision": session.content_revision,
                     }
                 )
-                self.vault.refresh_session(projected, events)
+                self.vault.refresh_session(
+                    projected, self.sessions.events(session.session_id)
+                )
             self.wiki.refresh()
             self.search.refresh()
             self.sessions.mark_distilled(
-                request.session_ids,
+                tuple(session for session, _ in selected),
                 runtime=request.runtime,
                 distilled_at=distilled_at,
             )

@@ -39,21 +39,31 @@ class SessionsService:
     ) -> AgentSession:
         now = datetime.now(UTC)
         session_id = stable_session_id(provider, provider_session_id, source_path)
-        existing = self.store.get_session(session_id)
+        candidates = self.store.sessions_for_provider_identity(
+            provider, provider_session_id
+        )
+        existing = next(
+            (
+                candidate
+                for candidate in candidates
+                if candidate.source_path == source_path
+            ),
+            None,
+        )
         if existing is None:
             relocated = tuple(
                 candidate
-                for candidate in self.store.sessions_for_provider_identity(
-                    provider,
-                    provider_session_id,
-                )
-                if candidate.source_path is None
-                or candidate.source_path == source_path
-                or not candidate.source_path.exists()
+                for candidate in candidates
+                if candidate.source_path is None or not candidate.source_path.exists()
             )
             if len(relocated) == 1:
                 existing = relocated[0]
-                session_id = existing.session_id
+        if existing is not None:
+            session_id = existing.session_id
+        elif self.store.get_session(session_id) is not None:
+            # The path-derived ID may belong to a record moved to a live path.
+            # Future reads find this new record by its exact source path.
+            session_id = f"ses_{uuid4().hex[:24]}"
         return self.store.remember_session(
             AgentSession(
                 session_id=session_id,
@@ -195,11 +205,9 @@ class SessionsService:
         if not pending:
             return ()
         anchor = pending[0]
-        return tuple(
-            session
-            for session in pending
-            if same_workspace(anchor, session)
-        )[:limit]
+        return tuple(session for session in pending if same_workspace(anchor, session))[
+            :limit
+        ]
 
     def distillation_candidates(self) -> tuple[AgentSession, ...]:
         state_root = self.store.database_path.parent
@@ -225,15 +233,15 @@ class SessionsService:
 
     def mark_distilled(
         self,
-        session_ids: tuple[str, ...],
+        sessions: tuple[AgentSession, ...],
         *,
         runtime: str,
         distilled_at: datetime,
     ) -> None:
-        for session_id in session_ids:
-            self.get(session_id)
+        for session in sessions:
+            self.get(session.session_id)
         self.store.mark_distilled(
-            session_ids,
+            sessions,
             runtime=runtime,
             distilled_at=distilled_at,
         )

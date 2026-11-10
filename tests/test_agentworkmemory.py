@@ -219,7 +219,7 @@ def test_appended_transcript_events_requeue_an_already_distilled_session(
 
     first = app.collect.collect(request)
     app.sessions.mark_distilled(
-        first.session_ids,
+        tuple(app.sessions.get(sid) for sid in first.session_ids),
         runtime="test-curator",
         distilled_at=datetime.now(UTC),
     )
