@@ -56,6 +56,14 @@ class SessionsService:
                 for candidate in candidates
                 if candidate.source_path is None or not candidate.source_path.exists()
             )
+            same_file = tuple(
+                candidate
+                for candidate in relocated
+                if candidate.source_path is not None
+                and candidate.source_path.name == source_path.name
+            )
+            if len(same_file) == 1:
+                relocated = same_file
             if len(relocated) == 1:
                 existing = relocated[0]
         if existing is not None:

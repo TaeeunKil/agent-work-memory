@@ -118,6 +118,27 @@ def test_resumed_source_reuses_exact_record_with_multiple_missing_histories(
     assert app.sync.run(request).events_added == 0
 
 
+def test_archiving_multiple_rollouts_preserves_each_session_and_cursor(tmp_path: Path):
+    app = sync_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    first = write_codex_transcript(home, tmp_path / "project")
+    second = first.with_name("continued.jsonl")
+    second.write_bytes(first.read_bytes())
+    request = SyncAgentRecords(
+        providers=(AgentProvider.CODEX,), home=home, include_content=True
+    )
+    app.sync.run(request)
+    ids = {s.session_id for s in app.sessions.list()}
+    archived = home / ".codex/archived_sessions"
+    archived.mkdir()
+    first.replace(archived / first.name)
+    second.replace(archived / second.name)
+    assert app.sync.run(request).events_added == 0
+    assert {s.session_id for s in app.sessions.list()} == ids
+    assert all(s.state is SessionState.COMPLETE for s in app.sessions.list())
+
+
 def test_original_path_reappearing_does_not_take_over_live_relocated_session(
     tmp_path: Path,
 ):
@@ -181,6 +202,29 @@ def test_codex_cursors_belong_to_retained_session_not_shared_provider_id(
     )
     assert collect(home_a).events_added == 0
     assert collect(home_b).events_added == 0
+
+
+def test_sync_captures_distinct_resumed_files_sharing_provider_id(tmp_path: Path):
+    app = sync_app(tmp_path)
+    app.vault.initialize(tmp_path / "vault")
+    home = tmp_path / "home"
+    first = write_codex_transcript(home, tmp_path / "project")
+    second = first.with_name("continued.jsonl")
+    second.write_text(
+        first.read_text(encoding="utf-8").replace(
+            "Keep this decision", "Keep the continuation decision"
+        ),
+        encoding="utf-8",
+    )
+    request = SyncAgentRecords(
+        providers=(AgentProvider.CODEX,), home=home, include_content=True
+    )
+    receipt = app.sync.run(request)
+    assert receipt.sessions_discovered == 2
+    assert len(app.sessions.list()) == 2
+    assert {s.source_path for s in app.sessions.list()} == {first, second}
+    assert all(len(app.sessions.events(s.session_id)) == 2 for s in app.sessions.list())
+    assert app.sync.run(request).events_added == 0
 
 
 def test_sync_reports_coarse_progress(tmp_path: Path):

@@ -53,3 +53,16 @@ read-only review of this follow-up reported no findings.
 Live sync subsequently completed successfully: 457 sessions and 113,276 events
 processed (including one-time cursor migration replay). A serialized manual
 retry was observed waiting for sync and starting only after its completion.
+
+## Multiple rollout files
+
+Real-file reconciliation also showed that distinct Codex rollouts can retain
+the same metadata session ID. Discovery now distinguishes rollout filenames,
+while still preferring the live copy of the same file over its archive copy.
+Missing-path relocation uses an unambiguous matching filename before the
+single-missing-record fallback. This preserves IDs and cursors when several
+same-provider-ID files move to the archive together. Both discovery and the
+multi-file archive interaction have regression tests observed failing first.
+
+Final verification after rollout/archive fixes: 227 tests passed; Ruff and
+viewer JavaScript syntax checks passed.

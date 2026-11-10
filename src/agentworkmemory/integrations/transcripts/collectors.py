@@ -36,7 +36,7 @@ class CodexTranscriptCollector:
                 (home / ".codex" / "archived_sessions", SessionState.COMPLETE),
             )
         )
-        discovered: dict[str, DiscoveredAgentSession] = {}
+        discovered: dict[tuple[str, str], DiscoveredAgentSession] = {}
         for root, state in roots:
             for path in jsonl_files(root):
                 meta = codex_metadata(path)
@@ -51,9 +51,12 @@ class CodexTranscriptCollector:
                     state=state,
                     normalizer_version=CODEX_NORMALIZER_VERSION,
                 )
-                existing = discovered.get(session_id)
+                # Resumed/forked rollouts can retain the original metadata ID.
+                # Only the same rollout in live/archive roots is a duplicate.
+                identity = (session_id, path.name)
+                existing = discovered.get(identity)
                 if existing is None or candidate.state is SessionState.OPEN:
-                    discovered[session_id] = candidate
+                    discovered[identity] = candidate
         return tuple(discovered.values())
 
     def read(
