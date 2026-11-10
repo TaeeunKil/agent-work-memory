@@ -66,3 +66,16 @@ multi-file archive interaction have regression tests observed failing first.
 
 Final verification after rollout/archive fixes: 227 tests passed; Ruff and
 viewer JavaScript syntax checks passed.
+
+## Completed operational verification
+
+- Serialized manual distillation succeeded for one session and changed five
+  durable pages. The earlier failed overlapping run remains recorded as failed.
+- Final local Codex collection processed 81 sessions, updated 28, and retained
+  30,091 additional events; three internal sessions were excluded.
+- Recovered inbox records and Wiki changes were committed and pushed through
+  the existing Vault publication workflow without rebuilding the search index
+  a third time. Search refreshes when its source signature changes.
+- Automatic collection reports the successful sync; automatic distillation
+  reports the successful manual run. The renewed grant expires February 8, 2027.
+- This verifies one manual batch, not completion of the entire pending backlog.

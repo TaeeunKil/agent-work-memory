@@ -32,7 +32,7 @@ including an intentional empty result, instead of seeding a successful no-op.
 - [x] Check expired/exhausted automatic runs return an actionable CLI failure.
 - [x] Run AWM pytest, Ruff, JavaScript syntax, and the broader test suite; review
   using .claude/agents/review.md and record fixes separately.
-- [ ] Back up real state before recovery, run local collection and one manual
+- [x] Back up real state before recovery, run local collection and one manual
   Wiki batch, inspect receipts and changes, then commit and push code and Vault.
 
 ## Review focus
