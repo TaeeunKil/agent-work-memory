@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko" data-register="blueprint">
+<head>
+<title>AWM — 대화가 작업 기억이 되는 과정</title>
+<link rel="stylesheet" href="kit.css" data-ve-kit>
+<style>
+:root{--accent:#b45b32}body{font-family:"Noto Sans KR","Malgun Gothic",sans-serif}main{max-width:1120px}h1{font-size:clamp(30px,4.3vw,52px);letter-spacing:-.055em}h1{max-width:none}h2{letter-spacing:-.035em}.lead{font-size:19px}.ve-svg text{font-family:"Noto Sans KR","Malgun Gothic",sans-serif}.intro-note{border-left:3px solid var(--accent);padding:12px 20px;background:var(--bg);margin:24px 0}.split{display:grid;grid-template-columns:1fr 1fr;gap:32px}.split>div{min-width:0}.split h3{margin-bottom:12px}.path{overflow-wrap:anywhere}.phase{display:grid;grid-template-columns:100px 1fr;gap:24px;padding:22px 0;border-top:1px solid var(--border)}.phase strong{color:var(--accent)}.phase p{margin:0}.phase small{display:block;color:var(--text-dim);margin-top:7px}.source-links{display:flex;flex-wrap:wrap;gap:10px 22px}.footnote{color:var(--text-dim);font-size:14px}details{border-top:1px solid var(--border);padding:20px 0}summary{cursor:pointer;font-weight:600}pre{font-size:14px}.ve-player ol{max-width:none}@media(max-width:700px){.split{grid-template-columns:1fr}.phase{grid-template-columns:70px 1fr;gap:12px}}@media print{.ve-toc{display:none}section{break-inside:avoid}}
+</style>
+</head>
+<body>
+<nav class="ve-toc" aria-label="문서 목차"><div><a href="#overview">전체 흐름</a><a href="#discover">새 기록 발견</a><a href="#resume">대화 이어 쓰기</a><a href="#storage">저장 범위</a><a href="#operate">확인과 운영</a></div><span class="pos"></span></nav>
+<main>
+<header id="overview"><p class="eyebrow">AGENT WORK MEMORY / PROJECT GUIDE</p><h1>대화를 모으고,<br>다시 꺼내 쓸 작업 기억으로.</h1><p class="lead">AWM은 로컬 대화 기록을 수집하고, 허용된 AI 정리를 거쳐 개인 Wiki와 근거 기록으로 남기는 도구다.</p><p class="meta">2026.11.10 코드 기준 · 동작 설명서 · 실시간 상태판 아님</p></header>
+<figure><ve-flow label="대화 앱의 로컬 기록을 AWM이 수집하고, 별도 정리 작업으로 Wiki를 만든 뒤 Git으로 업로드한다.">
+<ve-node id="o-app" at="1 1" sub="에이전트 도구">대화 앱</ve-node>
+<ve-node id="o-log" at="2 1" shape="db" sub="로컬 파일">세션 기록</ve-node>
+<ve-node id="o-collect" at="3 1" sub="예약·수동" key>AWM 수집</ve-node>
+<ve-node id="o-evidence" at="3 2" shape="db" sub="SQLite + inbox">대화 근거</ve-node>
+<ve-node id="o-wiki" at="2 2" shape="db" sub="Markdown" key>Wiki</ve-node>
+<ve-node id="o-git" at="1 2" sub="별도 게시 작업">비공개 Git</ve-node>
+<ve-edge from="o-app" to="o-log" label="기록한다"/><ve-edge from="o-log" to="o-collect" label="찾아 읽는다"/><ve-edge from="o-collect" to="o-evidence" label="저장"/><ve-edge from="o-evidence" to="o-wiki" label="허용된 AI가 정리" hot/><ve-edge from="o-wiki" to="o-git" label="커밋·푸시한다"/>
+</ve-flow><figcaption><span class="fig-n">01</span>수집, Wiki 정리, 업로드는 각각 실행 결과를 확인해야 하는 별도 단계다.</figcaption></figure>
+<div class="phase"><strong>수집</strong><p>새 대화와 추가된 내용을 근거로 보관한다.<small>이 단계는 AI를 호출하지 않는다. 수집 성공만으로 Wiki 정리까지 끝난 것은 아니다.</small></p></div>
+<div class="phase"><strong>정리</strong><p>대화 근거와 기존 Wiki를 읽고 프로젝트·결정·문제 해결 지식을 갱신한다.<small>유효한 권한이 필요하다. 실패하거나 권한이 만료되면 정리할 내용은 대기 상태로 남는다.</small></p></div>
+<div class="phase"><strong>업로드</strong><p>Vault의 변경된 Markdown을 Git 저장소에 올린다.<small>최근 커밋이 있다는 사실만으로 최신 대화가 모두 정리됐다고 판단할 수 없다.</small></p></div>
+
+<section id="discover"><div class="sec-head"><p class="ve-label caps">DISCOVERY</p><h2>새 기록은 세션 저장 위치를 다시 훑어서 찾는다.</h2></div><p>조사하면서 질문하거나 도구를 실행하면, 대화 앱이 그 내용을 자신의 기록에 저장한다. 다음 AWM 수집이 이 파일을 찾아 이전 수집 위치와 비교한다. 화면의 대화 목록 순서나 “최근 대화” 표시를 감시하는 방식은 아니다.</p>
+<figure><ve-flow label="설정된 위치를 스캔해 처음 발견한 파일은 수집하고, 기존 파일은 커서를 비교해 추가된 내용을 처리한다.">
+<ve-node id="d-scan" at="1 1" sub="예약·수동" key>기록 위치 스캔</ve-node>
+<ve-node id="d-match" at="2 1" sub="ID + 경로">기존 세션 찾기</ve-node>
+<ve-node id="d-new" at="3 1" sub="처음 발견한 대화">새 세션 등록</ve-node>
+<ve-node id="d-cursor" at="2 2" sub="수집 커서">수집 위치 비교</ve-node>
+<ve-node id="d-add" at="3 2" sub="메시지·도구" key>새 이벤트 저장</ve-node>
+<ve-node id="d-skip" at="1 2" sub="내용 개정은 그대로">추가 내용 없음</ve-node>
+<ve-edge from="d-scan" to="d-match" label="파일을 확인"/><ve-edge from="d-match" to="d-new" label="처음이면 등록"/><ve-edge from="d-match" to="d-cursor" label="기존이면 비교"/><ve-edge from="d-new" to="d-add" label="읽기"/><ve-edge from="d-cursor" to="d-add" label="추가분을 처리" hot/><ve-edge from="d-cursor" to="d-skip" label="변화 없으면 유지"/>
+</ve-flow><figcaption><span class="fig-n">02</span>“새로운 내용”은 새 파일이 생겼거나 기존 기록에 내용이 추가됐을 때 잡힌다.</figcaption></figure>
+<div class="split"><div><h3>대표적인 입력 위치</h3><pre>Codex
+~/.codex/sessions/**/*.jsonl
+~/.codex/archived_sessions/**/*.jsonl
+
+Claude
+~/.claude/projects/**/*.jsonl
+
+Cursor
+전용 수집기가 로컬 기록 저장소를 읽음</pre></div><div><h3>추적하는 정보</h3><p>각 AWM 세션마다 마지막 처리 줄, 파일 크기, 정규화기 버전 등을 보관한다. Codex는 중복 정규화를 위해 앞부분 일부를 겹쳐 확인하며, 이미 저장한 이벤트는 다시 넣지 않는다.</p><p>파일이 줄어들거나 파서 버전이 달라지면 다시 읽어 재구성한다. 단순히 “마지막 바이트 뒤만 읽는다”는 구현은 아니다.</p></div></div></section>
+
+<section id="resume"><div class="sec-head"><p class="ve-label caps">CONTINUATION</p><h2>예전 대화를 이어 쓰면, 같은 기억에 새 내용이 붙는다.</h2></div><p>같은 세션 기록에 이어 쓴 경우 기존 AWM 세션을 갱신한다. 실제로 새 이벤트가 저장되면 내용 개정 번호가 올라가고, 마지막 Wiki 정리 때의 개정보다 최신이면 다시 정리할 대상으로 잡힌다.</p>
+<figure class="ve-steps"><ve-flow label="대화를 이어 쓰면 파일에 내용이 추가되고 수집 후 내용 개정이 증가한다. 정리된 개정보다 최신이면 Wiki 갱신 대상으로 남는다.">
+<ve-node id="r-write" at="1 1" sub="이전 조사 재개" data-s="1">대화 이어 쓰기</ve-node>
+<ve-node id="r-log" at="2 1" shape="db" sub="내용 추가" data-s="2">원본 로그 갱신</ve-node>
+<ve-node id="r-rev" at="3 1" sub="새 이벤트 저장" key data-s="3">내용 개정 증가</ve-node>
+<ve-node id="r-wait" at="3 2" sub="최신 개정 존재" data-s="4">Wiki 정리 대기</ve-node>
+<ve-node id="r-finish" at="2 2" sub="읽은 개정 완료" key data-s="5">Wiki 갱신</ve-node>
+<ve-edge from="r-write" to="r-log" label="앱이 저장한다" data-s="2"/><ve-edge from="r-log" to="r-rev" label="다음 수집이 반영" data-s="3"/><ve-edge from="r-rev" to="r-wait" label="비교" hot data-s="4"/><ve-edge from="r-wait" to="r-finish" label="권한 내에서 정리" data-s="5" hot/>
+</ve-flow><div class="ve-player"><ol class="ve-cap"><li data-n="1/5">예전에 하던 대화를 열고 조사를 이어 간다.</li><li data-n="2/5">앱이 같은 세션 기록에 새 메시지와 도구 결과를 남긴다.</li><li data-n="3/5">다음 수집이 추가 이벤트를 저장하고 내용 개정을 올린다.</li><li data-n="4/5">내용이 마지막 정리 때보다 최신이면 다시 정리 대상이 된다.</li><li data-n="5/5">정리에 사용한 개정까지만 완료 처리한다. 정리 중 추가된 대화는 다음 대상으로 남는다.</li></ol><button data-go="-1" aria-label="이전 단계">←</button><button data-play>재생</button><input type="range" aria-label="대화 재개 처리 단계"><button data-go="1" aria-label="다음 단계">→</button></div><figcaption><span class="fig-n">03</span>단계별 동작 예시. 한 번 정리한 대화도 내용이 늘어나면 다시 정리한다.</figcaption></figure>
+<div class="split"><div><h3>최신 목록에도 올라오나?</h3><p>수집 후 반영된 파일 수정 시각으로 세션 목록을 정렬하므로, 이어 쓴 대화는 최신 쪽에 나타난다. 수집 전까지 즉시 반영되는 실시간 감시는 아니다.</p></div><div><h3>같은 ID면 무조건 합치나?</h3><p>아니다. 제공자 ID가 같아도 서로 다른 기록 파일이면 별도 이력으로 보존한다. 파일이 보관 폴더로 이동한 경우는 기존 경로의 소실과 후보의 유일성을 확인해 기존 세션을 연결한다.</p></div></div>
+<details><summary>중복·이동·동시 변경은 어떻게 다루나?</summary><ul><li>수집 위치는 제공자 ID가 아니라 AWM 내부 세션별로 관리한다.</li><li>같은 rollout 파일이 활성 폴더와 보관 폴더에 함께 있으면 활성 사본을 우선한다.</li><li>이벤트 식별자로 이미 저장한 메시지·도구 결과의 중복 삽입을 막는다.</li><li>수집·정리·게시 작업은 잠금으로 충돌을 조정한다.</li><li>정리 중 생긴 새 개정을 이미 정리된 것으로 덮어쓰지 않는다.</li></ul></details></section>
+
+<section id="storage"><div class="sec-head"><p class="ve-label caps">DATA BOUNDARY</p><h2>대화 근거는 DB에, 오래 쓸 지식은 Markdown에.</h2></div>
+<div class="split"><div><h3>로컬 실행 상태</h3><p class="path"><code>%LOCALAPPDATA%\AgentWorkMemory</code></p><pre>agentworkmemory.db
+  세션 · 메시지 · 도구 기록
+  수집 위치 · 개정 번호
+  작업 결과 · 검색 인덱스
+
+설정 · 로그 · 정리 작업 공간</pre><p class="footnote">실행 상태 DB는 Markdown Vault에 넣지 않는다.</p></div><div><h3>개인 Vault</h3><p class="path"><code>Documents\AgentWorkMemoryVault</code></p><pre>Home.md
+inbox/agent-sessions/  대화 근거
+projects/             프로젝트
+decisions/            결정
+problems/             문제와 해결
+procedures/           작업 절차
+systems/              시스템 지식
+unfinished/           미완료 작업
+imports/              가져온 자료</pre></div></div>
+<div class="intro-note"><strong>“파일은 안 모으지?”에 대한 정확한 답</strong><p>프로젝트의 코드·문서 폴더를 통째로 복사하는 방식은 아니다. 다만 대화 로그에 남은 도구 호출과 결과도 수집하므로, 도구로 읽거나 출력한 파일 내용은 대화 근거에 포함될 수 있다.</p></div>
+<figure><ve-flow label="로컬 근거를 허용된 모델이 임시 작업 공간에서 정리하고, 검증된 변경만 실제 Vault에 반영한다.">
+<ve-node id="s-input" at="1 1" shape="db" sub="대화 + Wiki">정리 입력</ve-node>
+<ve-node id="s-curator" at="2 1" sub="로컬·원격" key>권한 확인 후 AI</ve-node>
+<ve-node id="s-check" at="3 1" sub="출력 유효성">변경 검증</ve-node>
+<ve-node id="s-vault" at="3 2" shape="db" sub="일반 Markdown">실제 Vault</ve-node>
+<ve-edge from="s-input" to="s-curator" label="근거를 전달"/><ve-edge from="s-curator" to="s-check" label="변경안을 제출"/><ve-edge from="s-check" to="s-vault" label="반영" hot/>
+</ve-flow><figcaption><span class="fig-n">04</span>로컬에서 수집해도, 선택한 정리 런타임에 따라 대화 내용은 원격 모델로 전달될 수 있다.</figcaption></figure><p>정리는 별도 작업 공간에서 진행하고 결과를 검증한 뒤 Vault에 적용한다. 원격 정리에는 명시적인 콘텐츠 전송 허용이 필요하며, 로컬 모델을 선택하는 경로도 있다.</p></section>
+
+<section id="operate"><div class="sec-head"><p class="ve-label caps">OPERATIONS</p><h2>수집 시각과 정리 결과를 따로 확인한다.</h2></div><p><code>awm serve</code>로 뷰어를 시작한 뒤 <a href="http://127.0.0.1:3928">127.0.0.1:3928</a>에 접속한다. 뷰어는 이 컴퓨터의 루프백 주소에서 제공된다.</p>
+<div class="ve-table"><table><thead><tr><th>화면</th><th>확인할 내용</th></tr></thead><tbody><tr><td>Today</td><td>현재 상태와 필요한 다음 작업</td></tr><tr><td>Sessions</td><td>수집한 대화, 최신 내용, 정리 여부</td></tr><tr><td>Knowledge</td><td>정리된 Wiki와 연결된 근거</td></tr><tr><td>Activity</td><td>실행 이력, 성공·실패와 이유</td></tr></tbody></table></div>
+<div class="split"><div><h3>상태 확인</h3><pre>awm auto status
+awm auto-distill status
+awm vault status</pre><p class="footnote">수집 예약, 정리 권한·예약, Vault 게시 상태를 각각 확인한다.</p></div><div><h3>수동 처리 예시</h3><pre>awm sync --include-content
+
+awm distill --pending --limit 1 --using codex --allow-remote-content</pre><p class="footnote">두 번째 명령은 대기 세션 1개를 Codex 런타임으로 정리하며, 선택한 대화 내용의 원격 전달을 허용한다.</p></div></div>
+<div class="intro-note"><strong>어디까지 처리됐는지는 세 가지로 읽는다.</strong><p>최근 수집이 성공했는가 → 추가된 개정이 정리됐는가 → Vault 변경이 업로드됐는가. 권한 만료나 DB 오류가 있으면 어느 단계에서 멈췄는지 Activity와 각 상태에서 확인한다.</p></div>
+<details><summary>코드를 읽을 때의 구조</summary><p><code>app.py</code>가 구성 요소를 연결한다. CLI와 뷰어는 진입점, workflows는 작업 순서 조정, services는 제품 동작, stores는 저장, integrations는 Codex·Claude·Cursor 등의 외부 형식을 담당한다. 현재 제품 코드는 <code>src/agentworkmemory/</code>이며 <code>src/codealmanac/</code>는 과거 참조 코드다.</p></details></section>
+<section class="sources" aria-label="설명 근거"><p class="ve-label caps">SOURCE NOTES</p><p>AWM 코드와 프로젝트 계약을 바탕으로 정리했다. 아래 링크는 저장소의 main 브랜치이며 이후 변경될 수 있다.</p><div class="source-links"><a href="https://github.com/TaeeunKil/agent-work-memory/blob/main/CLAUDE.md">제품·아키텍처 계약</a><a href="https://github.com/TaeeunKil/agent-work-memory/blob/main/src/agentworkmemory/integrations/transcripts/collectors.py">기록 탐색</a><a href="https://github.com/TaeeunKil/agent-work-memory/blob/main/src/agentworkmemory/workflows/collect/service.py">수집 처리</a><a href="https://github.com/TaeeunKil/agent-work-memory/blob/main/src/agentworkmemory/services/sessions/service.py">세션과 정리 대상</a><a href="https://github.com/TaeeunKil/agent-work-memory/blob/main/src/agentworkmemory/workflows/distill/service.py">Wiki 정리</a><a href="https://github.com/TaeeunKil/agent-work-memory/blob/main/src/agentworkmemory/workflows/vault_repository/service.py">Vault 게시</a></div><p class="footnote">이 문서는 기능과 처리 원리를 설명한다. 실행 결과나 대기 건수는 실제 뷰어에서 확인해야 한다.</p></section>
+</main></body></html>
