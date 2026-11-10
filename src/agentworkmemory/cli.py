@@ -563,32 +563,38 @@ def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
         print(receipt.target.as_posix())
         return 0
     if args.command == "distill":
-        app.vault.require_path()
-        session_ids = distill_session_ids(args, app)
-        if not session_ids:
-            print("No captured sessions are waiting to be distilled.")
-            return 0
-        if args.pending:
-            print(f"Selected {len(session_ids)} pending session(s):")
-            for session_id in session_ids:
-                print(session_id)
-        print(direct_curator_configuration_text(args))
-        receipt = app.distill.run(
-            DistillSessions(
-                session_ids=session_ids,
-                runtime=args.runtime,
-                model=args.model,
-                effort=args.effort,
-                content_access=distill_content_access(args),
+        with (
+            app.distill_coordination.exclusive(),
+            app.distill_coordination.after_synchronization(
+                lambda message: print(message, file=sys.stderr, flush=True)
+            ),
+        ):
+            app.vault.require_path()
+            session_ids = distill_session_ids(args, app)
+            if not session_ids:
+                print("No captured sessions are waiting to be distilled.")
+                return 0
+            if args.pending:
+                print(f"Selected {len(session_ids)} pending session(s):")
+                for session_id in session_ids:
+                    print(session_id)
+            print(direct_curator_configuration_text(args))
+            receipt = app.distill.run(
+                DistillSessions(
+                    session_ids=session_ids,
+                    runtime=args.runtime,
+                    model=args.model,
+                    effort=args.effort,
+                    content_access=distill_content_access(args),
+                )
             )
-        )
-        print(f"Distill {receipt.run_id}: {receipt.status.value}")
-        if receipt.changed_files:
-            for path in receipt.changed_files:
-                print(path.as_posix())
-        else:
-            print("No durable Wiki pages changed.")
-        return 0
+            print(f"Distill {receipt.run_id}: {receipt.status.value}")
+            if receipt.changed_files:
+                for path in receipt.changed_files:
+                    print(path.as_posix())
+            else:
+                print("No durable Wiki pages changed.")
+            return 0
     if args.command == "improve":
         return dispatch_improve(args, app)
     if args.command == "translate":

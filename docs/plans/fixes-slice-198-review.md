@@ -39,3 +39,17 @@ full suite passed.
 Live recovery was started separately after a consistent SQLite backup. Its
 completion and publication receipts are operational state, not public test
 fixtures.
+
+## Live concurrency follow-up
+
+The first live manual review reached the curator successfully, but overlapped
+the sync search rebuild and failed with a SQLite write lock. The manual CLI
+had bypassed the coordination already used by automatic and viewer reviews.
+It now acquires the distillation lock, waits for synchronization, and holds the
+sync lock through selection and completion. Two regressions failed before the
+fix and passed afterward. The full suite passed with 225 tests. A separate
+read-only review of this follow-up reported no findings.
+
+Live sync subsequently completed successfully: 457 sessions and 113,276 events
+processed (including one-time cursor migration replay). A serialized manual
+retry was observed waiting for sync and starting only after its completion.

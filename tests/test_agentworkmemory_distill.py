@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from filelock import FileLock, Timeout
 
 from agentworkmemory.agents import distill_instructions
 from agentworkmemory.app import create_app
@@ -176,6 +177,59 @@ def test_distill_leaves_events_arriving_during_review_pending(tmp_path: Path):
     }
     page = next((vault / "inbox/agent-sessions").glob("manual-*.md"))
     assert "New follow-up after review started." in page.read_text(encoding="utf-8")
+
+
+def test_manual_distill_cli_holds_sync_and_distillation_locks(tmp_path, monkeypatch):
+    adapter = FakeCuratorAdapter()
+    app = distill_app(tmp_path, adapter)
+    app.vault.initialize(tmp_path / "vault")
+    session = note_session(app, "Review under coordination.")
+
+    def check_locks(request):
+        for path in (
+            app.distill_coordination.sync_lock_path,
+            app.distill_coordination.distill_lock_path,
+        ):
+            with pytest.raises(Timeout), FileLock(path, timeout=0):
+                pass
+
+    adapter.mutate = check_locks
+    monkeypatch.setattr("agentworkmemory.cli.create_app", lambda config: app)
+    assert (
+        main(
+            (
+                "distill",
+                session.session_id,
+                "--using",
+                adapter.runtime,
+                "--allow-local-content",
+            )
+        )
+        == 0
+    )
+
+
+def test_manual_distill_cli_does_not_overlap_another_review(tmp_path, monkeypatch):
+    adapter = FakeCuratorAdapter()
+    app = distill_app(tmp_path, adapter)
+    app.vault.initialize(tmp_path / "vault")
+    session = note_session(app, "Already reviewing.")
+    monkeypatch.setattr("agentworkmemory.cli.create_app", lambda config: app)
+    with FileLock(app.distill_coordination.distill_lock_path):
+        assert (
+            main(
+                (
+                    "distill",
+                    session.session_id,
+                    "--using",
+                    adapter.runtime,
+                    "--allow-local-content",
+                )
+            )
+            == 1
+        )
+    assert not adapter.requests
+    assert app.sessions.get(session.session_id).distilled_at is None
 
 
 def test_distill_repairs_existing_frontmatter_omitted_by_curator(tmp_path: Path):

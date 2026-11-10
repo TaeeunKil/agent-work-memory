@@ -26,7 +26,9 @@ class DistillCoordination:
         try:
             lock.acquire(timeout=0)
         except Timeout as error:
-            raise DistillationAlreadyRunning from error
+            raise DistillationAlreadyRunning(
+                "Another Wiki distillation is already running."
+            ) from error
         try:
             yield
         finally:
@@ -56,7 +58,9 @@ class DistillCoordination:
                     progress,
                     "Synchronization did not finish before the wait limit.",
                 )
-                raise SynchronizationWaitExpired from error
+                raise SynchronizationWaitExpired(
+                    "Synchronization did not finish before the wait limit."
+                ) from error
             report_progress(
                 progress,
                 "Synchronization finished. Starting Wiki distillation; "
