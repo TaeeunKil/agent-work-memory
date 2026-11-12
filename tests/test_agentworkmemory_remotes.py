@@ -2,11 +2,13 @@ import json
 import subprocess
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import build_parser, dispatch
+from agentworkmemory.integrations import processes
 from agentworkmemory.integrations.processes import WINDOWS_CREATE_NO_WINDOW
 from agentworkmemory.integrations.remotes.process import OpenSshRunner
 from agentworkmemory.integrations.remotes.ssh import SshRemoteSnapshotAdapter
@@ -213,10 +215,17 @@ def test_ssh_snapshot_is_incremental_and_rejects_unsafe_archive(tmp_path: Path):
     assert not (tmp_path / "escape.jsonl").exists()
 
 
-def test_windows_ssh_capture_process_is_hidden(
+@pytest.mark.parametrize(
+    ("platform", "expected_flags"),
+    [("win32", WINDOWS_CREATE_NO_WINDOW), ("linux", 0)],
+)
+def test_ssh_capture_process_uses_platform_flags(
     monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    expected_flags: int,
 ):
     captured = {}
+    monkeypatch.setattr(processes, "sys", SimpleNamespace(platform=platform))
 
     def fake_run(command, **kwargs):
         captured["command"] = command
@@ -235,7 +244,7 @@ def test_windows_ssh_capture_process_is_hidden(
     )
 
     assert output == b"ok"
-    assert captured["creationflags"] == WINDOWS_CREATE_NO_WINDOW
+    assert captured["creationflags"] == expected_flags
 
 
 def test_doctor_explains_that_captured_sessions_need_distillation(

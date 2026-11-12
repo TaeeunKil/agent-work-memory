@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import sys
 from pathlib import Path
 
 from agentworkmemory.app import create_app
@@ -18,7 +19,7 @@ def test_cursor_composer_enters_the_session_and_wiki_pipeline(tmp_path: Path):
     )
     vault = app.vault.initialize(tmp_path / "vault")
     home = tmp_path / "home"
-    workspace = Path("C:/cursor-project")
+    workspace = tmp_path / "cursor-project"
     database = write_cursor_database(
         home,
         composer_id="cursor-session-1",
@@ -196,7 +197,7 @@ def test_current_cursor_agent_transcript_enters_the_pipeline_incrementally(
 
 def test_cursor_jsonl_uses_header_identity_and_metadata(tmp_path: Path):
     home = tmp_path / "home"
-    workspace = Path("C:/cursor-jsonl-project")
+    workspace = tmp_path / "cursor-jsonl-project"
     database = write_cursor_database(
         home,
         composer_id="jsonl-with-header",
@@ -333,7 +334,12 @@ def test_cursor_workspace_uris_cover_local_wsl_and_ssh(tmp_path: Path):
     sessions = CursorTranscriptCollector().discover(home)
     by_id = {session.provider_session_id: session for session in sessions}
 
-    assert by_id["local"].cwd == Path("C:/local-workspace")
+    expected_local = (
+        Path("C:/local-workspace")
+        if sys.platform == "win32"
+        else Path("/C:/local-workspace")
+    )
+    assert by_id["local"].cwd == expected_local
     assert by_id["wsl"].cwd is not None
     assert by_id["wsl"].cwd.name == "wsl-project"
     assert "Ubuntu" in str(by_id["wsl"].cwd)

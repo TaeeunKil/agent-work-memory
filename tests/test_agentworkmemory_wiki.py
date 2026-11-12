@@ -1,9 +1,12 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import main
+from agentworkmemory.integrations import processes
+from agentworkmemory.integrations.processes import WINDOWS_CREATE_NO_WINDOW
 from agentworkmemory.services.curators.models import ContentAccess
 from agentworkmemory.services.sessions.models import AgentEventKind
 from agentworkmemory.services.vault import service as vault_service
@@ -315,27 +318,39 @@ def test_vault_read_reports_a_locked_filename_without_a_traceback_path(
     assert str(page.parent) not in str(raised.value)
 
 
-def test_windows_curator_workspace_acl_is_repaired_without_a_console(
+@pytest.mark.parametrize(
+    ("platform", "expected_flags"),
+    [("win32", WINDOWS_CREATE_NO_WINDOW), ("linux", 0)],
+)
+def test_curator_workspace_acl_respects_platform(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    expected_flags: int,
 ):
     captured = []
+    monkeypatch.setattr(processes, "sys", SimpleNamespace(platform=platform))
 
     def fake_run(command, **kwargs):
         captured.append((command, kwargs))
 
-    monkeypatch.setattr(vault_service.os, "name", "nt")
     monkeypatch.setenv("USERDOMAIN", "DESKTOP")
     monkeypatch.setenv("USERNAME", "almanac-user")
-    monkeypatch.setattr(vault_service.subprocess, "run", fake_run)
     monkeypatch.setattr(
-        vault_service.subprocess,
-        "CREATE_NO_WINDOW",
-        0x08000000,
-        raising=False,
+        vault_service,
+        "os",
+        SimpleNamespace(
+            name="nt" if platform == "win32" else "posix",
+            environ=vault_service.os.environ,
+        ),
     )
+    monkeypatch.setattr(vault_service.subprocess, "run", fake_run)
 
     vault_service.normalize_workspace_permissions(tmp_path / "vault")
+
+    if platform != "win32":
+        assert captured == []
+        return
 
     commands = [command for command, _ in captured]
     assert commands == [
@@ -359,7 +374,7 @@ def test_windows_curator_workspace_acl_is_repaired_without_a_console(
     ]
     for _, kwargs in captured:
         assert kwargs["check"] is False
-        assert kwargs["creationflags"] == 0x08000000
+        assert kwargs["creationflags"] == expected_flags
 
 
 def test_curator_workspace_cleanup_repairs_permissions_and_retries_lock(

@@ -11,6 +11,7 @@ from filelock import FileLock, Timeout
 from agentworkmemory.agents import distill_instructions
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import main
+from agentworkmemory.integrations import processes
 from agentworkmemory.integrations.curators import yoke as yoke_curator
 from agentworkmemory.integrations.curators.hidden_codex import (
     HiddenCodexCli,
@@ -936,13 +937,20 @@ def test_windows_yoke_curator_prefers_standalone_install(
     assert standalone_codex_executable() == str(executable)
 
 
+@pytest.mark.parametrize(
+    ("platform", "expected_flags"),
+    [("win32", WINDOWS_CREATE_NO_WINDOW), ("linux", 0)],
+)
 def test_yoke_codex_process_uses_utf8_instead_of_windows_locale(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    expected_flags: int,
 ):
     from yoke.providers.codex_app.process import JsonRpcLineProcess
 
     captured = {}
+    monkeypatch.setattr(processes, "sys", SimpleNamespace(platform=platform))
 
     class FakeChild:
         stdin = None
@@ -975,13 +983,20 @@ def test_yoke_codex_process_uses_utf8_instead_of_windows_locale(
     assert captured["encoding"] == "utf-8"
     assert captured["errors"] == "strict"
     assert captured["env"]["EXAMPLE"] == "1"
-    assert captured["creationflags"] == WINDOWS_CREATE_NO_WINDOW
+    assert captured["creationflags"] == expected_flags
 
 
-def test_windows_codex_readiness_process_is_hidden(
+@pytest.mark.parametrize(
+    ("platform", "expected_flags"),
+    [("win32", WINDOWS_CREATE_NO_WINDOW), ("linux", 0)],
+)
+def test_codex_readiness_process_uses_platform_flags(
     monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    expected_flags: int,
 ):
     captured = {}
+    monkeypatch.setattr(processes, "sys", SimpleNamespace(platform=platform))
 
     class FakeProcess:
         returncode = 0
@@ -1003,14 +1018,21 @@ def test_windows_codex_readiness_process_is_hidden(
     result = asyncio.run(hidden_run_command("codex", "login", "status"))
 
     assert result.code == 0
-    assert captured["creationflags"] == WINDOWS_CREATE_NO_WINDOW
+    assert captured["creationflags"] == expected_flags
 
 
-def test_windows_codex_cli_buffers_process_without_asyncio_pipes(
+@pytest.mark.parametrize(
+    ("platform", "expected_flags"),
+    [("win32", WINDOWS_CREATE_NO_WINDOW), ("linux", 0)],
+)
+def test_codex_cli_buffers_process_with_platform_flags(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    expected_flags: int,
 ):
     captured = {}
+    monkeypatch.setattr(processes, "sys", SimpleNamespace(platform=platform))
     monkeypatch.setenv("CODEX_WINDOWS_REGISTERED_CORE", "1")
     monkeypatch.setenv("CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY", "Desktop.Package")
 
@@ -1045,7 +1067,7 @@ def test_windows_codex_cli_buffers_process_without_asyncio_pipes(
     assert captured["input"] == b"Finish."
     assert captured["stdout"] == asyncio.subprocess.PIPE
     assert captured["stderr"] == asyncio.subprocess.PIPE
-    assert captured["creationflags"] == WINDOWS_CREATE_NO_WINDOW
+    assert captured["creationflags"] == expected_flags
     assert "CODEX_WINDOWS_REGISTERED_CORE" not in captured["env"]
     assert "CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY" not in captured["env"]
 
