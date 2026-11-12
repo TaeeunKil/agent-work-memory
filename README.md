@@ -26,6 +26,26 @@ AWM has three separate layers:
 The source checkout is shareable application code. The state directory and
 Vault are private data and must not be committed to this repository.
 
+## Agent recall skill
+
+The repository includes [awm-recall](.agents/skills/awm-recall/SKILL.md), a skill
+for agents to search prior work with `awm search`, read Wiki pages, and follow
+original evidence with `awm show`. It documents the existing CLI; it adds no
+MCP server or new retrieval command.
+
+The skill source lives in this application repository. To use it in other
+projects, copy the `awm-recall` folder into your agent's configured skill
+directory. Installing AWM with `uv tool install` does not install the skill.
+The calling agent needs AWM installed, a configured Vault, and authorization
+to read the relevant private content.
+
+The application repository contains code and skill instructions; a separate
+private Vault repository can carry Markdown knowledge and retained session
+pages. The local SQLite database and execution state are a third layer and
+are not transferred by cloning the Vault repository. On another machine,
+retained Markdown evidence can be read even when its source session is absent
+from that machine's local database.
+
 ## Windows quick start
 
 These commands are intended for a normal, non-administrator PowerShell unless a
